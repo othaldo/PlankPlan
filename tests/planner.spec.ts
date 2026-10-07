@@ -1,4 +1,33 @@
 import { expect, test } from '@playwright/test';
+test('keeps wheel zoom inside the canvas, including controls and zoom limits, while the rest of the page scrolls', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
+  await page.goto('/');
+  const svg = page.getByRole('img', { name: 'Interaktiver Verlegeplan' });
+  const width = async () => Number((await svg.getAttribute('viewBox'))!.split(' ')[2]);
+  const scroll = () => page.evaluate(() => ({ x: window.scrollX, y: window.scrollY }));
+  const settle = () => page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  await svg.hover(); const before = await scroll(), initialWidth = await width();
+  await page.mouse.wheel(0, 400); await expect.poll(width).toBeGreaterThan(initialWidth);
+  await settle(); expect(await scroll()).toEqual(before);
+  const afterZoomOut = await width();
+  await page.mouse.wheel(0, -400); await expect.poll(width).toBeLessThan(afterZoomOut);
+  await settle(); expect(await scroll()).toEqual(before);
+  await page.mouse.wheel(400, 0); await settle(); expect(await scroll()).toEqual(before);
+  const control = page.getByRole('button', { name: 'Vergrößern', exact: true });
+  await control.hover(); const controlsScroll = await scroll(), controlsWidth = await width();
+  await page.mouse.wheel(0, -400); await expect.poll(width).toBeLessThan(controlsWidth);
+  await settle(); expect(await scroll()).toEqual(controlsScroll);
+  await page.getByRole('button', { name: 'Plan einpassen', exact: true }).click();
+  for (let i = 0; i < 18; i++) await control.click();
+  await svg.hover(); const minimumWidth = await width(), limitScroll = await scroll();
+  expect(minimumWidth).toBeGreaterThanOrEqual(100); expect(minimumWidth * .88).toBeLessThan(100);
+  await page.mouse.wheel(0, -400); await settle(); expect(await width()).toBe(minimumWidth); expect(await scroll()).toEqual(limitScroll);
+  await page.getByRole('link', { name: /PlankPlan/ }).hover(); const outsideScroll = await scroll();
+  await page.mouse.wheel(0, 400); await expect.poll(async () => (await scroll()).y).toBeGreaterThan(outsideScroll.y);
+  expect(errors).toEqual([]);
+});
+
 test('changes real material, optimizes the offset, persists and round-trips a project', async ({ page }) => {
   const errors: string[] = []; page.on('pageerror', e => errors.push(e.message));
   await page.goto('/'); await expect(page).toHaveTitle(/PlankPlan/);

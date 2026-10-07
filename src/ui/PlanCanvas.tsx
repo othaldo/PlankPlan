@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import type { MultiPolygon } from 'polygon-clipping';
 import { bounds, validatePolygon } from '../geometry/polygon';
@@ -20,6 +20,7 @@ export function PlanCanvas({ floor, selectedId, layouts, tool, draft, setDraft, 
     onSelect: (id: string) => void; onRoom: (polygon: Point[]) => void; onPolygon: (id: string, polygon: Point[]) => void;
     onError: (message: string) => void; snap: number; snapRooms: boolean; showBoards: boolean }) {
   const svg = useRef<SVGSVGElement>(null);
+  const canvas = useRef<HTMLDivElement>(null);
   const [canvasSize, setCanvasSize] = useState({ width: 800, height: 600 });
   useEffect(() => {
     const node = svg.current; if (!node) return;
@@ -159,17 +160,33 @@ export function PlanCanvas({ floor, selectedId, layouts, tool, draft, setDraft, 
       svg.current?.setPointerCapture(event.pointerId);
     } else onPolygon(room.id, polygon);
   }
-  function zoom(factor: number, center = { x: view.x + view.w / 2, y: view.y + view.h / 2 }) {
-    if (view.w * factor < 100 || view.w * factor > 2e6) return;
-    setView({ x: center.x - (center.x - view.x) * factor, y: center.y - (center.y - view.y) * factor, w: view.w * factor, h: view.h * factor });
-  }
+  const zoom = useCallback((factor: number, center?: Point) => {
+    setView(v => {
+      if (v.w * factor < 100 || v.w * factor > 2e6) return v;
+      const anchor = center ?? { x: v.x + v.w / 2, y: v.y + v.h / 2 };
+      return { x: anchor.x - (anchor.x - v.x) * factor, y: anchor.y - (anchor.y - v.y) * factor, w: v.w * factor, h: v.h * factor };
+    });
+  }, []);
+  useEffect(() => {
+    const node = canvas.current; if (!node) return;
+    const wheel = (event: WheelEvent) => {
+      // React's delegated wheel listener is passive. Cancel scrolling here,
+      // including over controls and at zoom limits, before the event bubbles.
+      event.preventDefault(); event.stopPropagation();
+      if (!event.deltaY) return;
+      const matrix = svg.current?.getScreenCTM(); if (!matrix) return;
+      const point = new DOMPoint(event.clientX, event.clientY).matrixTransform(matrix.inverse());
+      zoom(event.deltaY > 0 ? 1.12 : .88, { x: point.x, y: point.y });
+    };
+    node.addEventListener('wheel', wheel, { passive: false });
+    return () => node.removeEventListener('wheel', wheel);
+  }, [zoom]);
   function roomPoints(room: Room) { return preview?.id === room.id ? preview.polygon : room.polygon; }
   const labelSize = view.w / 75, gridSize = view.w > 16000 ? 1000 : 500;
   const worldPerPixel = Math.max(view.w / canvasSize.width, view.h / canvasSize.height);
-  return <div className={`plan-canvas tool-${tool}`}>
+  return <div ref={canvas} className={`plan-canvas tool-${tool}`}>
     <svg ref={svg} role="img" aria-label="Interaktiver Verlegeplan" viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`}
-      onPointerDown={click} onPointerMove={move} onPointerUp={release} onPointerCancel={() => { drag.current = null; lastVertexPointer.current = null; setPreview(null); setAlignment(null); setSnapTarget(null); }}
-      onWheel={e => { e.preventDefault(); zoom(e.deltaY > 0 ? 1.12 : 0.88, coordinate(e.clientX, e.clientY)); }}>
+      onPointerDown={click} onPointerMove={move} onPointerUp={release} onPointerCancel={() => { drag.current = null; lastVertexPointer.current = null; setPreview(null); setAlignment(null); setSnapTarget(null); }}>
       <defs><pattern id="grid" width={gridSize} height={gridSize} patternUnits="userSpaceOnUse"><path d={`M ${gridSize} 0 L 0 0 0 ${gridSize}`} fill="none" stroke="#dce1da" strokeWidth="1" vectorEffect="non-scaling-stroke" /></pattern></defs>
       <rect x={view.x - view.w} y={view.y - view.h} width={view.w * 3} height={view.h * 3} fill="url(#grid)" />
       {floor.background && <image href={floor.background.dataUrl} x={floor.background.origin.x} y={floor.background.origin.y}
