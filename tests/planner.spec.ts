@@ -1,4 +1,26 @@
 import { expect, test } from '@playwright/test';
+test('finds a working full-start stagger without guessing and explains an impossible first row', async ({ page }) => {
+  await page.goto('/');
+  const project={version:1,name:'Startsuche',flooring:{name:'Test',length:1285,width:194,thickness:8,expansionGap:10,minRowWidth:60,minEndPieceLength:100,jointOffset:400,minJointOffset:400,boardsPerPack:10,reservePercent:0},
+    floors:[{id:'f',name:'Etage',background:null,calibration:null,rooms:[{id:'r',name:'Startsuche',polygon:[{x:0,y:0},{x:4010,y:0},{x:4010,y:2736},{x:0,y:2736}],layout:{direction:0,offsetX:0,offsetY:0,firstRowWidth:'full',mode:'manual'}}]}]};
+  const input=page.locator('input[type=file][accept=".json,application/json"]');
+  await input.setInputFiles({name:'suche.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(project))});
+  await expect(page.getByRole('heading',{name:'Startsuche',exact:true})).toBeVisible();
+  const search=page.getByRole('button',{name:'Festen Versatz mit ganzer Startdiele einstellen',exact:true});
+  await search.click();
+  await expect(page.locator('.notice')).toContainText('Passender Versatz gefunden',{timeout:30000});
+  await expect(page.getByLabel('Fester Versatz je Reihe')).toHaveValue('642.5');
+  await expect(page.getByLabel('Mit ganzer Startdiele beginnen')).toBeChecked();
+  await expect(page.getByText('Automatisch geplant',{exact:true})).toBeVisible();
+  project.flooring.minEndPieceLength=300;
+  await input.setInputFiles({name:'konflikt.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(project))});
+  await expect(page.getByLabel('Verlegemuster')).not.toBeVisible();
+  await search.click();
+  await expect(page.locator('.notice')).toContainText('Endstück wäre nur 135 mm',{timeout:30000});
+  await expect(page.locator('.warning-card')).toContainText('Mindeststücklänge: 300 mm');
+  await expect(page.getByText('Keine zulässige Verlegung gefunden',{exact:true})).toBeVisible();
+  await expect(page.getByTestId('new-boards')).not.toBeVisible();
+});
 test('uses an exact custom stagger with a full starter and persists both constraints', async ({ page }) => {
   await page.goto('/');
   const project = { version:1, name:'Fester Versatz', flooring:{name:'Test',length:1285,width:194,thickness:8,expansionGap:10,minRowWidth:60,minEndPieceLength:100,jointOffset:400,minJointOffset:400,boardsPerPack:10,reservePercent:0},

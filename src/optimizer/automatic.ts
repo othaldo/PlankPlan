@@ -13,12 +13,18 @@ interface Candidate { origin: number; phase: number; spans: Span[]; joints: numb
 interface State { candidate: Candidate; cost: number; previous?: State; row: number; material: MaterialState }
 // Full length at the wall must be a rectangular starter, not an angled wall cut.
 function fullStarter(c: Candidate, f: Flooring) { return Math.abs(c.first - f.length) < EPS && c.requirements[0].rectangular; }
-export function jointsCompatible(a: { joints: number[]; spans: Span[] }, b: { joints: number[]; spans: Span[] }, minimum: number): boolean {
+function closestJointDistance(a: { joints: number[]; spans: Span[] }, b: { joints: number[]; spans: Span[] }): number {
   const common = a.spans.flatMap(s => b.spans.map(t => ({ minX: Math.max(s.minX, t.minX), maxX: Math.min(s.maxX, t.maxX) }))).filter(s => s.maxX > s.minX + EPS);
   const inCommon = (x: number) => common.some(s => x > s.minX + EPS && x < s.maxX - EPS);
-  return !a.joints.some(x => inCommon(x) && b.joints.some(y => inCommon(y) && Math.abs(x - y) < minimum - EPS));
+  let distance = Infinity;
+  for (const x of a.joints) if (inCommon(x)) for (const y of b.joints) if (inCommon(y)) distance = Math.min(distance, Math.abs(x - y));
+  return distance;
 }
-function candidate(band: MultiPolygon, y: number, phase: number, row: number, f: Flooring): Candidate | null {
+export function jointsCompatible(a: { joints: number[]; spans: Span[] }, b: { joints: number[]; spans: Span[] }, minimum: number): boolean {
+  return closestJointDistance(a, b) >= minimum - EPS;
+}
+const millimeters = (n: number) => String(Math.round(n * 10) / 10).replace('.', ',');
+function candidate(band: MultiPolygon, y: number, phase: number, row: number, f: Flooring, conflict?: { reason?: string }): Candidate | null {
   const b = bounds(polygonPoints(band)), spans = band.map(poly => bounds(polygonPoints([poly])));
   const origin = phase + Math.floor((b.minX - phase + 1e-7) / f.length) * f.length;
   const count = Math.ceil((b.maxX - origin - 1e-7) / f.length);
@@ -32,7 +38,10 @@ function candidate(band: MultiPolygon, y: number, phase: number, row: number, f:
     for (const poly of clipped) {
       const p = bounds(polygonPoints([poly]));
       // Check each disconnected physical piece, not the bounding box of a whole source board.
-      if (p.maxX - p.minX < f.minEndPieceLength - EPS) return null;
+      if (p.maxX - p.minX < f.minEndPieceLength - EPS) {
+        if (conflict) conflict.reason = `Reihe ${row + 1}: ${i === count - 1 ? 'Das Endstück' : i === 0 ? 'Das Startstück' : 'Ein Teilstück'} wäre nur ${millimeters(p.maxX - p.minX)} mm lang. Eingestellte Mindeststücklänge: ${f.minEndPieceLength} mm.`;
+        return null;
+      }
     }
     const bb = bounds(polygonPoints(clipped));
     if (!usedCount) first = bb.maxX - bb.minX;
@@ -78,12 +87,22 @@ function planRegular(room: Room, f: Flooring, prepared: PreparedRoom, offsetY: n
     ? [mod(bounds(polygonPoints(bands[0].band)).minX - shift(bands[0].row), f.length)]
     : all.length <= 256 ? all : Array.from({ length: 256 }, (_, i) => all[Math.floor(i * (all.length - 1) / 255)]);
   let best: { origins: Map<number, number>; boards: number; cuts: number; first: number } | undefined;
+  let firstConflict: string | undefined;
   for (const phase of samples) {
     let inventory = initial, previous: Candidate | undefined, previousRow = -2, cuts = 0, first = 0, valid = true;
     const origins = new Map<number, number>();
     for (const { row, y, band } of bands) {
-      const choice = candidate(band, y, mod(phase + shift(row), f.length), row, f);
-      if (!choice || (!previous && room.layout.startWithFullPlank && !fullStarter(choice, f)) || (previous && row === previousRow + 1 && !jointsCompatible(previous, choice, f.minJointOffset ?? 300))) { valid = false; break; }
+      const detail: { reason?: string } = {};
+      const choice = candidate(band, y, mod(phase + shift(row), f.length), row, f, detail);
+      if (!choice) { firstConflict = detail.reason; valid = false; break; }
+      if (!previous && room.layout.startWithFullPlank && !fullStarter(choice, f)) {
+        firstConflict = `Reihe ${row + 1}: Die Startwand ist schräg oder hat eine Nische; eine ganze rechteckige Startdiele passt dort nicht. Raumkontur prüfen oder „Mit ganzer Startdiele beginnen“ ausschalten.`;
+        valid = false; break;
+      }
+      if (previous && row === previousRow + 1 && !jointsCompatible(previous, choice, f.minJointOffset ?? 300)) {
+        firstConflict = `Reihen ${previousRow + 1} und ${row + 1}: Die Stirnfugen liegen nur ${millimeters(closestJointDistance(previous, choice))} mm auseinander. Eingestellter Mindest-Fugenversatz: ${f.minJointOffset ?? 300} mm.`;
+        valid = false; break;
+      }
       inventory = allocateMaterial(choice.requirements, f, inventory, context);
       origins.set(row, choice.origin); cuts += choice.cutCount; if (!previous) first = choice.first;
       previous = choice; previousRow = row;
@@ -91,7 +110,10 @@ function planRegular(room: Room, f: Flooring, prepared: PreparedRoom, offsetY: n
     if (valid && (!best || inventory.newBoards < best.boards || (inventory.newBoards === best.boards && (cuts < best.cuts || (cuts === best.cuts && first > best.first)))))
       best = { origins, boards: inventory.newBoards, cuts, first };
   }
-  if (!best) return { layout: emptyLayout(room, [`${patternName}${room.layout.startWithFullPlank ? ' mit ganzer Startdiele' : ''}: Kein gültiges regelmäßiges Muster mit mindestens ${f.minEndPieceLength} mm Stücklänge und ${f.minJointOffset ?? 300} mm Fugenabstand gefunden. Startdiele, Versatz, Richtung oder Regeln ändern. Deine Vorgaben werden nicht automatisch verändert.`]), inventory: initial };
+  if (!best) return { layout: emptyLayout(room, [
+    ...(room.layout.startWithFullPlank && firstConflict ? [firstConflict] : []),
+    `${patternName}${room.layout.startWithFullPlank ? ' mit ganzer Startdiele' : ''}: Kein gültiges regelmäßiges Muster mit mindestens ${f.minEndPieceLength} mm Stücklänge und ${f.minJointOffset ?? 300} mm Fugenabstand gefunden. Startdiele, Versatz, Richtung oder Regeln ändern. Deine Vorgaben werden nicht automatisch verändert.`
+  ]), inventory: initial };
   const layout = fillPrepared(prepared, f, { ...room.layout, offsetY }, best.origins);
   if (!layout.feasible) return { layout: emptyLayout(room, ['Das regelmäßige Muster enthält einen unzulässigen Zuschnitt. Bitte anderes Muster oder andere Regeln wählen.']), inventory: initial };
   return allocateLayout(layout, f, initial, context);
@@ -99,6 +121,21 @@ function planRegular(room: Room, f: Flooring, prepared: PreparedRoom, offsetY: n
 /** Beam search over real per-row cuts with hard end-piece and adjacent-joint constraints. */
 export function layoutAutomatic(room: Room, f: Flooring): Layout {
   return planAutomatic(room, f).layout;
+}
+/** Find a feasible constant stagger with a full starter; never relax construction rules. */
+export function findFixedStagger(room: Room, f: Flooring): { fixedStagger?: number; layout: Layout; candidates: number } {
+  const requested = { ...room, layout: { ...room.layout, mode: 'automatic' as const, pattern: 'custom' as const, startWithFullPlank: true } };
+  const steps = [...new Set([room.layout.fixedStagger ?? f.jointOffset, f.length / 2, f.length / 3, f.length / 4,
+    ...Array.from({ length: 63 }, (_, i) => Math.round((i + 1) * f.length / 64 * 10) / 10)])].filter(n => n >= 0 && n < f.length);
+  let result: Layout | undefined, candidates = 0;
+  for (const fixedStagger of steps) {
+    result = planAutomatic({ ...requested, layout: { ...requested.layout, fixedStagger } }, f).layout;
+    candidates++;
+    if (result.feasible) return { fixedStagger, layout: result, candidates };
+    // Every full-start pattern has the same first row, regardless of its stagger.
+    if (result.warnings[0]?.startsWith('Reihe 1:')) return { layout: result, candidates };
+  }
+  return { layout: result ?? emptyLayout(room, ['Kein passender fester Versatz gefunden.']), candidates };
 }
 export function planAutomatic(room: Room, f: Flooring, initial: MaterialState = initialMaterial(), context?: MaterialContext) {
   const failure = (warnings: string[]) => ({ layout: emptyLayout(room, warnings), inventory: initial });

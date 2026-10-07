@@ -6,6 +6,7 @@ import { mod } from '../geometry/polygon';
 import { optimizeProject, planProject, planningSignature } from './project';
 import { parseProject } from '../import/project';
 import { serializeProject } from '../export/project';
+import { findFixedStagger } from './automatic';
 
 const f = { ...PRESETS[0], minEndPieceLength:100, minJointOffset:400, reservePercent:0 };
 function room(): Room {
@@ -26,6 +27,28 @@ function assertFixed(r: Room) {
   return plan;
 }
 describe('fixed stagger and full starter constraints',()=>{
+  it('automatically finds a feasible fixed stagger when 400 mm eventually produces a 60 mm starter',()=>{
+    const r=room(); r.polygon[2].y=r.polygon[3].y=2736;
+    const invalid=layoutRoom(r,f);
+    expect(invalid.feasible).toBe(false); expect(invalid.warnings[0]).toContain('Reihe 14'); expect(invalid.warnings[0]).toContain('60 mm');
+    const result=findFixedStagger(r,f);
+    expect(result.layout.feasible).toBe(true); expect(result.fixedStagger).toBe(642.5);
+    expect(result.layout.rows[0].firstLength).toBeCloseTo(1285);
+    expect(result.candidates).toBe(2);
+  });
+  it('explains an unavoidable first-row end conflict without trying irrelevant staggers',()=>{
+    const result=findFixedStagger(room(),{...f,minEndPieceLength:300});
+    expect(result.fixedStagger).toBeUndefined(); expect(result.candidates).toBe(1);
+    expect(result.layout.warnings[0]).toContain('Reihe 1'); expect(result.layout.warnings[0]).toContain('Endstück');
+    expect(result.layout.warnings[0]).toContain('135 mm'); expect(result.layout.warnings[0]).toContain('300 mm');
+    expect(result.layout.boards).toEqual([]);
+  });
+  it('explains why a whole rectangular starter cannot follow a slanted start wall',()=>{
+    const r=room(); r.polygon[3].x=100;
+    const result=findFixedStagger(r,f);
+    expect(result.fixedStagger).toBeUndefined(); expect(result.layout.warnings[0]).toContain('Startwand');
+    expect(result.candidates).toBe(1);
+  });
   it('starts with full length and keeps exact 400 mm after wrapping',()=>{ assertFixed(room()); });
   it('works after rotation and translation',()=>{
     const r=room(); r.polygon=r.polygon.map(p=>({x:-p.y+9000,y:p.x+7000})); r.layout.direction=90;
@@ -47,9 +70,9 @@ describe('fixed stagger and full starter constraints',()=>{
     expect(layoutRoom(r,{...f,minEndPieceLength:300}).feasible).toBe(true);
   });
   it('rejects an exact stagger below the required joint distance',()=>{
-    const r=room(); r.layout.fixedStagger=133;
-    const plan=layoutRoom(r,f); expect(plan.feasible).toBe(false); expect(plan.boards).toEqual([]);
-    expect(plan.warnings[0]).toContain('133 mm');
+    const r=room();
+    const plan=layoutRoom(r,{...f,minJointOffset:500}); expect(plan.feasible).toBe(false); expect(plan.boards).toEqual([]);
+    expect(plan.warnings[0]).toContain('400 mm'); expect(plan.warnings[0]).toContain('500 mm');
   });
   it.each([-1,1285,NaN])('rejects invalid fixed stagger %s',step=>{
     const r=room(); r.layout.fixedStagger=step;

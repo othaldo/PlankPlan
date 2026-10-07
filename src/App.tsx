@@ -169,13 +169,22 @@ function App() {
     try { validateFlooring(flooring); setProject(p => ({ ...p, flooring })); }
     catch (e) { setNotice((e as Error).message); }
   }
-  function optimize() {
+  function optimize(kind: 'transverse' | 'fixed-start' = 'transverse') {
     if (!room) return;
     worker.current?.terminate(); const next = new Worker(new URL('./optimizer/worker.ts', import.meta.url), { type: 'module' });
     worker.current = next; setOptimizing(true);
     const targetFloor = floor.id, targetRoom = room.id;
-    next.onmessage = (event: MessageEvent<{ offsetY?: number; candidates?: number; error?: string }>) => {
+    const targetProject = project;
+    next.onmessage = (event: MessageEvent<{ offsetY?: number; fixedStagger?: number; candidates?: number; error?: string }>) => {
       next.terminate(); worker.current = null; setOptimizing(false);
+      if (latestProject.current !== targetProject) { setNotice('Das Projekt wurde während der Suche geändert. Bitte die Suche erneut starten.'); return; }
+      if (kind === 'fixed-start') {
+        setProject(p => ({ ...p, floors: p.floors.map(f => f.id !== targetFloor ? f : { ...f,
+          rooms: f.rooms.map(r => r.id !== targetRoom ? r : { ...r, layout: { ...r.layout, mode: 'automatic', pattern: 'custom', startWithFullPlank: true,
+            fixedStagger: event.data.fixedStagger ?? r.layout.fixedStagger ?? p.flooring.jointOffset } }) }) }));
+        setNotice(event.data.error ?? `Passender Versatz gefunden: ${format(event.data.fixedStagger!)} mm · erste Startdiele in voller Länge. Mindeststücklänge und Fugenabstand sind eingehalten.`);
+        return;
+      }
       if (event.data.error) { setNotice(event.data.error); return; }
       if (event.data.offsetY !== undefined) {
         setProject(p => ({ ...p, floors: p.floors.map(f => f.id !== targetFloor ? f : { ...f,
@@ -184,7 +193,7 @@ function App() {
       }
     };
     next.onerror = () => { next.terminate(); worker.current = null; setOptimizing(false); setNotice('Die Optimierung konnte nicht abgeschlossen werden.'); };
-    next.postMessage({ room, flooring: project.flooring });
+    next.postMessage({ room, flooring: project.flooring, kind });
   }
   function optimizePackages() {
     projectWorker.current?.terminate();
@@ -336,9 +345,8 @@ function App() {
       <aside className="results-panel"><span className="eyebrow">VERLEGUNG & ERGEBNIS</span><h2>{room?.name ?? 'Raum auswählen'}</h2>
         {room && room.flooringEnabled !== false ? <><section className="layout-controls"><h3>Richtung & Planung</h3><div className="direction-buttons">{[0, 90].map(angle => <button className={room.layout.direction === angle ? 'active' : ''} key={angle} onClick={() => updateRoom(r => ({ ...r, layout: { ...r.layout, direction: angle } }))}>{angle === 0 ? '↔' : '↕'} {angle}°</button>)}</div>
           <NumberField label="Eigener Winkel" value={room.layout.direction} min={-360} max={360} unit="°" onChange={direction => updateRoom(r => ({ ...r, layout: { ...r.layout, direction } }))} />
-          <button className="primary full" onClick={() => updateRoom(r => ({ ...r, layout: { ...r.layout,
-            mode: 'automatic', pattern: 'custom', fixedStagger: r.layout.fixedStagger ?? project.flooring.jointOffset, startWithFullPlank: true } }))}>
-            Festen Versatz mit ganzer Startdiele einstellen
+          <button className="primary full" disabled={optimizing} onClick={() => optimize('fixed-start')}>
+            {optimizing ? 'Passender Versatz wird gesucht …' : 'Festen Versatz mit ganzer Startdiele einstellen'}
           </button>
           {room.layout.mode !== 'manual' && <>
             <label className="field"><span>Verlegemuster</span><select aria-label="Verlegemuster" value={room.layout.pattern ?? 'optimized'}
@@ -366,14 +374,14 @@ function App() {
               onChange={firstRowWidth => updateRoom(r => ({ ...r, layout: { ...r.layout, firstRowWidth } }))} />}
             <p className="hint">{room.layout.firstRowWidth === undefined ? 'Die Automatik verteilt die Breite auf beide Randreihen.' : 'Deine erste Reihenbreite bleibt fest. Die letzte Reihe passt sich an; die Längsplanung folgt deinen Vorgaben oben.'}</p>
           </>}
-          {room.layout.mode !== 'manual' && <div className={layout?.feasible ? 'auto-status' : 'auto-status blocked'}><Sparkles size={18} /><div><strong>{layout?.feasible ? 'Automatisch geplant' : 'Keine zulässige Verlegung gefunden'}</strong><p>Startstücke je Reihe werden so gewählt, dass alle Teilstücke mindestens {project.flooring.minEndPieceLength} mm lang sind und benachbarte Fugen mindestens {project.flooring.minJointOffset ?? 300} mm Abstand haben.</p></div></div>}
+          {room.layout.mode !== 'manual' && <div className={layout?.feasible ? 'auto-status' : 'auto-status blocked'}><Sparkles size={18} /><div><strong>{layout?.feasible ? 'Automatisch geplant' : 'Keine zulässige Verlegung gefunden'}</strong><p>{!layout?.feasible && layout?.warnings[0] ? layout.warnings[0] : <>Startstücke je Reihe werden so gewählt, dass alle Teilstücke mindestens {project.flooring.minEndPieceLength} mm lang sind und benachbarte Fugen mindestens {project.flooring.minJointOffset ?? 300} mm Abstand haben.</>}</p></div></div>}
           <details className="manual-controls"><summary>Manuell anpassen (Experten)</summary><label className="toggle-field"><input type="checkbox" checked={room.layout.mode === 'manual'} onChange={e => updateRoom(r => ({ ...r, layout: { ...r.layout, mode: e.target.checked ? 'manual' : 'automatic' } }))} />Manuelle Rasterplanung aktivieren</label>
           {room.layout.mode === 'manual' && <>
           <label className="range-field"><span>Quer-Offset <b>{format(room.layout.offsetY)} mm</b></span><input aria-label="Quer-Offset" type="range" min="0" max={project.flooring.width - .1} step=".1" value={room.layout.offsetY}
             onChange={e => updateRoom(r => ({ ...r, layout: { ...r.layout, offsetY: Number(e.target.value) } }))} /></label>
           <p className="hint">Verschiebt die Reihen quer zur Dielenrichtung.</p>
           <NumberField label="Längs-Offset" value={room.layout.offsetX} max={project.flooring.length - .1} step={.1} onChange={offsetX => updateRoom(r => ({ ...r, layout: { ...r.layout, offsetX } }))} />
-          <button className="primary full optimize-button" disabled={optimizing || !layout} onClick={optimize}><Sparkles size={16} />{optimizing ? 'Varianten werden geprüft …' : 'Quer-Offset optimieren'}</button>
+          <button className="primary full optimize-button" disabled={optimizing || !layout} onClick={() => optimize()}><Sparkles size={16} />{optimizing ? 'Varianten werden geprüft …' : 'Quer-Offset optimieren'}</button>
           <p className="hint">Hier sind die Mindestlängen nicht automatisch gelöst. Zur automatischen Planung die manuelle Rasterplanung ausschalten.</p></>}
           </details></section>
           {computation.errors.has(room.id) && <div className="warning-card"><TriangleAlert size={18} /><p>{computation.errors.get(room.id)}</p></div>}
