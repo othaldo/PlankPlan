@@ -2,11 +2,14 @@ import { expect, test } from '@playwright/test';
 test('uses an exact custom stagger with a full starter and persists both constraints', async ({ page }) => {
   await page.goto('/');
   const project = { version:1, name:'Fester Versatz', flooring:{name:'Test',length:1285,width:194,thickness:8,expansionGap:10,minRowWidth:60,minEndPieceLength:100,jointOffset:400,minJointOffset:400,boardsPerPack:10,reservePercent:0},
-    floors:[{id:'floor',name:'Erdgeschoss',background:null,calibration:null,rooms:[{id:'room',name:'Fester Start',polygon:[{x:0,y:0},{x:4010,y:0},{x:4010,y:2348},{x:0,y:2348}],layout:{direction:0,offsetX:0,offsetY:0,firstRowWidth:'full'}}]}] };
+    floors:[{id:'floor',name:'Erdgeschoss',background:null,calibration:null,rooms:[{id:'room',name:'Fester Start',polygon:[{x:0,y:0},{x:4010,y:0},{x:4010,y:2348},{x:0,y:2348}],layout:{direction:0,offsetX:0,offsetY:0,firstRowWidth:'full',mode:'manual'}}]}] };
   const input=page.locator('input[type=file][accept=".json,application/json"]');
   await input.setInputFiles({name:'fix.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(project))});
   await expect(page.getByRole('heading',{name:'Fester Start',exact:true})).toBeVisible();
-  await page.getByLabel('Verlegemuster').selectOption('custom');
+  await expect(page.getByLabel('Verlegemuster')).not.toBeVisible();
+  await page.getByRole('button',{name:'Festen Versatz mit ganzer Startdiele einstellen',exact:true}).click();
+  await expect(page.getByLabel('Verlegemuster')).toHaveValue('custom');
+  await expect(page.getByLabel('Mit ganzer Startdiele beginnen')).toBeChecked();
   await page.getByLabel('Fester Versatz je Reihe').fill('400'); await page.getByLabel('Fester Versatz je Reihe').press('Enter');
   await page.getByLabel('Mit ganzer Startdiele beginnen').check();
   await expect(page.getByText('Automatisch geplant',{exact:true})).toBeVisible();

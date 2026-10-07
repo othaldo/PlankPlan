@@ -336,6 +336,10 @@ function App() {
       <aside className="results-panel"><span className="eyebrow">VERLEGUNG & ERGEBNIS</span><h2>{room?.name ?? 'Raum auswählen'}</h2>
         {room && room.flooringEnabled !== false ? <><section className="layout-controls"><h3>Richtung & Planung</h3><div className="direction-buttons">{[0, 90].map(angle => <button className={room.layout.direction === angle ? 'active' : ''} key={angle} onClick={() => updateRoom(r => ({ ...r, layout: { ...r.layout, direction: angle } }))}>{angle === 0 ? '↔' : '↕'} {angle}°</button>)}</div>
           <NumberField label="Eigener Winkel" value={room.layout.direction} min={-360} max={360} unit="°" onChange={direction => updateRoom(r => ({ ...r, layout: { ...r.layout, direction } }))} />
+          <button className="primary full" onClick={() => updateRoom(r => ({ ...r, layout: { ...r.layout,
+            mode: 'automatic', pattern: 'custom', fixedStagger: r.layout.fixedStagger ?? project.flooring.jointOffset, startWithFullPlank: true } }))}>
+            Festen Versatz mit ganzer Startdiele einstellen
+          </button>
           {room.layout.mode !== 'manual' && <>
             <label className="field"><span>Verlegemuster</span><select aria-label="Verlegemuster" value={room.layout.pattern ?? 'optimized'}
               onChange={e => updateRoom(r => ({ ...r, layout: { ...r.layout, pattern: e.target.value as 'optimized' | 'half' | 'third' | 'custom' } }))}>
