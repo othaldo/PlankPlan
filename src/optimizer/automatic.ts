@@ -11,6 +11,8 @@ import type { MaterialContext, MaterialState, Requirement } from '../flooring/ma
 interface Span { minX: number; maxX: number }
 interface Candidate { origin: number; phase: number; spans: Span[]; joints: number[]; count: number; first: number; last: number; cutCount: number; requirements: Requirement[] }
 interface State { candidate: Candidate; cost: number; previous?: State; row: number; material: MaterialState }
+// Full length at the wall must be a rectangular starter, not an angled wall cut.
+function fullStarter(c: Candidate, f: Flooring) { return Math.abs(c.first - f.length) < EPS && c.requirements[0].rectangular; }
 export function jointsCompatible(a: { joints: number[]; spans: Span[] }, b: { joints: number[]; spans: Span[] }, minimum: number): boolean {
   const common = a.spans.flatMap(s => b.spans.map(t => ({ minX: Math.max(s.minX, t.minX), maxX: Math.min(s.maxX, t.maxX) }))).filter(s => s.maxX > s.minX + EPS);
   const inCommon = (x: number) => common.some(s => x > s.minX + EPS && x < s.maxX - EPS);
@@ -47,7 +49,12 @@ function candidate(band: MultiPolygon, y: number, phase: number, row: number, f:
 
 /** Search the common start phase, keeping every row in the selected repeating pattern. */
 function planRegular(room: Room, f: Flooring, prepared: PreparedRoom, offsetY: number, initial: MaterialState, context?: MaterialContext) {
-  const repeat = room.layout.pattern === 'half' ? 2 : 3, step = f.length / repeat;
+  const step = room.layout.pattern === 'custom' ? room.layout.fixedStagger ?? f.jointOffset : f.length / (room.layout.pattern === 'half' ? 2 : 3);
+  // Repeat named fractions exactly to avoid accumulated floating-point drift.
+  const shift = (row: number) => (room.layout.pattern === 'custom' ? row : row % (room.layout.pattern === 'half' ? 2 : 3)) * step;
+  const patternName = room.layout.pattern === 'custom' ? `Fester Versatz ${step} mm` : room.layout.pattern === 'half' ? 'Halbversatz' : 'Drittelversatz';
+  if (!Number.isFinite(step) || step < 0 || step >= f.length)
+    return { layout: emptyLayout(room, [`Der feste Versatz muss zwischen 0 mm und weniger als ${f.length} mm liegen.`]), inventory: initial };
   const b = prepared.extent, originY = b.minY - offsetY, rows = Math.ceil((b.maxY - originY - 1e-7) / f.width);
   if (rows * (Math.ceil((b.maxX - b.minX) / f.length) + 3) > 15000) throw new Error('Dieser Raum erzeugt mehr als 15.000 Dielen. Bitte kleinere Räume oder größere Dielen verwenden.');
   const bands: { row: number; y: number; band: MultiPolygon }[] = [], phases = new Set<number>();
@@ -60,21 +67,23 @@ function planRegular(room: Room, f: Flooring, prepared: PreparedRoom, offsetY: n
     bands.push({ row, y, band });
     for (const poly of band) {
       const span = bounds(polygonPoints([poly]));
-      for (const x of [span.minX, span.maxX, span.minX + f.minEndPieceLength, span.maxX - f.minEndPieceLength]) add(x - (row % repeat) * step);
+      for (const x of [span.minX, span.maxX, span.minX + f.minEndPieceLength, span.maxX - f.minEndPieceLength]) add(x - shift(row));
     }
     for (const stock of initial.offcuts.slice(-32)) {
-      add((stock.edge === 'right' ? b.minX + stock.length : b.maxX - stock.length) - (row % repeat) * step);
+      add((stock.edge === 'right' ? b.minX + stock.length : b.maxX - stock.length) - shift(row));
     }
   }
   // Bound unusual polygons without approximating the selected pattern itself.
-  const all = [...phases], samples = all.length <= 256 ? all : Array.from({ length: 256 }, (_, i) => all[Math.floor(i * (all.length - 1) / 255)]);
+  const all = [...phases], samples = room.layout.startWithFullPlank && bands.length
+    ? [mod(bounds(polygonPoints(bands[0].band)).minX - shift(bands[0].row), f.length)]
+    : all.length <= 256 ? all : Array.from({ length: 256 }, (_, i) => all[Math.floor(i * (all.length - 1) / 255)]);
   let best: { origins: Map<number, number>; boards: number; cuts: number; first: number } | undefined;
   for (const phase of samples) {
     let inventory = initial, previous: Candidate | undefined, previousRow = -2, cuts = 0, first = 0, valid = true;
     const origins = new Map<number, number>();
     for (const { row, y, band } of bands) {
-      const choice = candidate(band, y, mod(phase + (row % repeat) * step, f.length), row, f);
-      if (!choice || (previous && row === previousRow + 1 && !jointsCompatible(previous, choice, f.minJointOffset ?? 300))) { valid = false; break; }
+      const choice = candidate(band, y, mod(phase + shift(row), f.length), row, f);
+      if (!choice || (!previous && room.layout.startWithFullPlank && !fullStarter(choice, f)) || (previous && row === previousRow + 1 && !jointsCompatible(previous, choice, f.minJointOffset ?? 300))) { valid = false; break; }
       inventory = allocateMaterial(choice.requirements, f, inventory, context);
       origins.set(row, choice.origin); cuts += choice.cutCount; if (!previous) first = choice.first;
       previous = choice; previousRow = row;
@@ -82,7 +91,7 @@ function planRegular(room: Room, f: Flooring, prepared: PreparedRoom, offsetY: n
     if (valid && (!best || inventory.newBoards < best.boards || (inventory.newBoards === best.boards && (cuts < best.cuts || (cuts === best.cuts && first > best.first)))))
       best = { origins, boards: inventory.newBoards, cuts, first };
   }
-  if (!best) return { layout: emptyLayout(room, [`${repeat === 2 ? 'Halbversatz' : 'Drittelversatz'}: Kein gültiges regelmäßiges Muster mit mindestens ${f.minEndPieceLength} mm Stücklänge und ${f.minJointOffset ?? 300} mm Fugenabstand gefunden. Anderes Muster, Richtung oder Regeln wählen.`]), inventory: initial };
+  if (!best) return { layout: emptyLayout(room, [`${patternName}${room.layout.startWithFullPlank ? ' mit ganzer Startdiele' : ''}: Kein gültiges regelmäßiges Muster mit mindestens ${f.minEndPieceLength} mm Stücklänge und ${f.minJointOffset ?? 300} mm Fugenabstand gefunden. Startdiele, Versatz, Richtung oder Regeln ändern. Deine Vorgaben werden nicht automatisch verändert.`]), inventory: initial };
   const layout = fillPrepared(prepared, f, { ...room.layout, offsetY }, best.origins);
   if (!layout.feasible) return { layout: emptyLayout(room, ['Das regelmäßige Muster enthält einen unzulässigen Zuschnitt. Bitte anderes Muster oder andere Regeln wählen.']), inventory: initial };
   return allocateLayout(layout, f, initial, context);
@@ -101,7 +110,7 @@ export function planAutomatic(room: Room, f: Flooring, initial: MaterialState = 
   const offsetY = firstWidth === undefined
     ? optimizeTransverse({ ...room, layout: { ...room.layout, mode: 'manual' } }, f).offsetY
     : firstWidth === 'full' ? 0 : f.width - Math.min(firstWidth, f.width);
-  if (room.layout.pattern === 'half' || room.layout.pattern === 'third') return planRegular(room, f, prepared, offsetY, initial, context);
+  if (room.layout.pattern === 'half' || room.layout.pattern === 'third' || room.layout.pattern === 'custom') return planRegular(room, f, prepared, offsetY, initial, context);
   const b = prepared.extent, originY = b.minY - offsetY;
   const rows = Math.ceil((b.maxY - originY - 1e-7) / f.width);
   const minimumJoint = f.minJointOffset ?? 300;
@@ -132,8 +141,9 @@ export function planAutomatic(room: Room, f: Flooring, initial: MaterialState = 
       if (stock.edge === 'right') add(spans[0].minX + stock.length);
       else add(spans[spans.length - 1].maxX - stock.length);
     }
-    const choices = [...phases].map(phase => candidate(band, y, phase, row, f)).filter((c): c is Candidate => !!c);
-    if (!choices.length) return failure([`Reihe ${row + 1}: Keine Verlegung mit allen Teilstücken mindestens ${f.minEndPieceLength} mm gefunden. Raumkontur, Richtung oder Verlegeregel prüfen. Es werden keine zu kurzen Dielen eingeplant.`]);
+    const rowPhases = !states.length && room.layout.startWithFullPlank ? [mod(bounds(polygonPoints(band)).minX, f.length)] : [...phases];
+    const choices = rowPhases.map(phase => candidate(band, y, phase, row, f)).filter((c): c is Candidate => !!c && (states.length > 0 || !room.layout.startWithFullPlank || fullStarter(c, f)));
+    if (!choices.length) return failure([`Reihe ${row + 1}: Keine Verlegung${!states.length && room.layout.startWithFullPlank ? ' mit ganzer Startdiele' : ''} mit allen Teilstücken mindestens ${f.minEndPieceLength} mm gefunden. Raumkontur, Richtung oder Verlegeregel prüfen. Es werden keine zu kurzen Dielen eingeplant.`]);
     const next: State[] = [];
     for (const choice of choices) {
       if (!states.length) {

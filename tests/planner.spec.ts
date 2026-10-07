@@ -1,4 +1,37 @@
 import { expect, test } from '@playwright/test';
+test('uses an exact custom stagger with a full starter and persists both constraints', async ({ page }) => {
+  await page.goto('/');
+  const project = { version:1, name:'Fester Versatz', flooring:{name:'Test',length:1285,width:194,thickness:8,expansionGap:10,minRowWidth:60,minEndPieceLength:100,jointOffset:400,minJointOffset:400,boardsPerPack:10,reservePercent:0},
+    floors:[{id:'floor',name:'Erdgeschoss',background:null,calibration:null,rooms:[{id:'room',name:'Fester Start',polygon:[{x:0,y:0},{x:4010,y:0},{x:4010,y:2348},{x:0,y:2348}],layout:{direction:0,offsetX:0,offsetY:0,firstRowWidth:'full'}}]}] };
+  const input=page.locator('input[type=file][accept=".json,application/json"]');
+  await input.setInputFiles({name:'fix.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(project))});
+  await expect(page.getByRole('heading',{name:'Fester Start',exact:true})).toBeVisible();
+  await page.getByLabel('Verlegemuster').selectOption('custom');
+  await page.getByLabel('Fester Versatz je Reihe').fill('400'); await page.getByLabel('Fester Versatz je Reihe').press('Enter');
+  await page.getByLabel('Mit ganzer Startdiele beginnen').check();
+  await expect(page.getByText('Automatisch geplant',{exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Pakete optimieren',exact:true}).click();
+  await expect(page.locator('.notice')).toContainText('Beste gefundene Planung',{timeout:30000});
+  await expect(page.getByLabel('Mit ganzer Startdiele beginnen')).toBeChecked();
+  await expect(page.getByLabel('Fester Versatz je Reihe')).toHaveValue('400');
+  await page.getByLabel('Fester Versatz je Reihe').fill('133'); await page.getByLabel('Fester Versatz je Reihe').press('Enter');
+  await expect(page.getByText('Keine zulässige Verlegung gefunden',{exact:true})).toBeVisible();
+  await expect(page.getByLabel('Fester Versatz je Reihe')).toHaveValue('133');
+  await expect(page.getByLabel('Mit ganzer Startdiele beginnen')).toBeChecked();
+  await page.getByLabel('Fester Versatz je Reihe').fill('400'); await page.getByLabel('Fester Versatz je Reihe').press('Enter');
+  await expect(page.getByText('Automatisch geplant',{exact:true})).toBeVisible();
+  const downloading=page.waitForEvent('download'); await page.getByRole('button',{name:'JSON speichern',exact:true}).click();
+  await input.setInputFiles((await (await downloading).path())!);
+  await expect(page.locator('.notice')).toContainText('Projekt einschließlich');
+  await expect.poll(() => page.evaluate(() => {
+    const settings=JSON.parse(localStorage.getItem('plankplan.project.v1') ?? 'null')?.floors[0].rooms[0].layout;
+    return [settings?.pattern,settings?.fixedStagger,settings?.startWithFullPlank];
+  })).toEqual(['custom',400,true]);
+  await page.reload();
+  await expect(page.getByLabel('Verlegemuster')).toHaveValue('custom');
+  await expect(page.getByLabel('Fester Versatz je Reihe')).toHaveValue('400');
+  await expect(page.getByLabel('Mit ganzer Startdiele beginnen')).toBeChecked();
+});
 test('chooses repeating patterns, keeps them during package optimization and previews without cut colors', async ({ page }) => {
   await page.goto('/');
   const project = { version:1, name:'Regelmäßiges Fugenbild', flooring:{name:'Test',length:1285,width:194,thickness:8,expansionGap:10,minRowWidth:60,minEndPieceLength:100,jointOffset:400,minJointOffset:400,boardsPerPack:10,reservePercent:0},

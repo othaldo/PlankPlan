@@ -338,12 +338,19 @@ function App() {
           <NumberField label="Eigener Winkel" value={room.layout.direction} min={-360} max={360} unit="°" onChange={direction => updateRoom(r => ({ ...r, layout: { ...r.layout, direction } }))} />
           {room.layout.mode !== 'manual' && <>
             <label className="field"><span>Verlegemuster</span><select aria-label="Verlegemuster" value={room.layout.pattern ?? 'optimized'}
-              onChange={e => updateRoom(r => ({ ...r, layout: { ...r.layout, pattern: e.target.value as 'optimized' | 'half' | 'third' } }))}>
-              <option value="optimized">Material sparen · freier Versatz</option><option value="half">Regelmäßig · Halbversatz</option><option value="third">Regelmäßig · Drittelversatz</option>
+              onChange={e => updateRoom(r => ({ ...r, layout: { ...r.layout, pattern: e.target.value as 'optimized' | 'half' | 'third' | 'custom' } }))}>
+              <option value="optimized">Material sparen · freier Versatz</option><option value="half">Regelmäßig · Halbversatz</option><option value="third">Regelmäßig · Drittelversatz</option><option value="custom">Eigener fester Versatz</option>
             </select></label>
-            <p className="hint">{room.layout.pattern === 'half' || room.layout.pattern === 'third'
+            {room.layout.pattern === 'custom' && <NumberField label="Fester Versatz je Reihe" value={room.layout.fixedStagger ?? project.flooring.jointOffset} min={0} max={project.flooring.length - .1} step={.1}
+              onChange={fixedStagger => updateRoom(r => ({ ...r, layout: { ...r.layout, fixedStagger } }))} />}
+            <p className="hint">{room.layout.pattern === 'custom'
+              ? 'Jede nächste Reihe verschiebt die Fugen um genau diesen Wert. Beim Erreichen einer Dielenlänge beginnt das Muster wieder von vorn. Auch die Paketoptimierung hält den Versatz ein.'
+              : room.layout.pattern === 'half' || room.layout.pattern === 'third'
               ? `Die Fugen wiederholen sich alle ${room.layout.pattern === 'half' ? 'zwei' : 'drei'} Reihen. Die Automatik sucht einen passenden Start. Das feste Muster bleibt auch bei der Paketoptimierung erhalten und kann mehr Material benötigen.`
               : 'Die Suche bevorzugt weniger neue Dielen. Reststücke können zu unterschiedlichen Startlängen führen.'}</p>
+            <label className="toggle-field"><input type="checkbox" checked={room.layout.startWithFullPlank ?? false}
+              onChange={e => updateRoom(r => ({ ...r, layout: { ...r.layout, startWithFullPlank: e.target.checked } }))} />Mit ganzer Startdiele beginnen</label>
+            <p className="hint">Die erste Startdiele hat dann volle Länge ({project.flooring.length} mm). Die Breite der ersten Reihe stellst du darunter ein. Falls die Vorgaben mit den Mindestlängen oder der Raumkontur kollidieren, zeigt der Plan den Konflikt an.</p>
             <label className="field"><span>Erste Reihe</span><select aria-label="Erste Reihe" value={room.layout.firstRowWidth === undefined ? 'automatic' : room.layout.firstRowWidth === 'full' ? 'full' : 'custom'}
               onChange={e => { const choice = e.target.value; updateRoom(r => ({ ...r, layout: { ...r.layout,
                 firstRowWidth: choice === 'automatic' ? undefined : choice === 'full' ? 'full' : Math.min(project.flooring.width, Math.max(.1, layout?.firstRowWidth || project.flooring.width)) } })); }}>
@@ -353,7 +360,7 @@ function App() {
             </select></label>
             {typeof room.layout.firstRowWidth === 'number' && <NumberField label="Breite der ersten Reihe" value={Math.min(room.layout.firstRowWidth, project.flooring.width)} min={.1} max={project.flooring.width} step={.1}
               onChange={firstRowWidth => updateRoom(r => ({ ...r, layout: { ...r.layout, firstRowWidth } }))} />}
-            <p className="hint">{room.layout.firstRowWidth === undefined ? 'Die Automatik verteilt die Breite auf beide Randreihen.' : 'Deine erste Reihenbreite bleibt fest. Die letzte Reihe passt sich an; Startstücke, Fugenversatz und Reststücke werden weiter automatisch geplant.'}</p>
+            <p className="hint">{room.layout.firstRowWidth === undefined ? 'Die Automatik verteilt die Breite auf beide Randreihen.' : 'Deine erste Reihenbreite bleibt fest. Die letzte Reihe passt sich an; die Längsplanung folgt deinen Vorgaben oben.'}</p>
           </>}
           {room.layout.mode !== 'manual' && <div className={layout?.feasible ? 'auto-status' : 'auto-status blocked'}><Sparkles size={18} /><div><strong>{layout?.feasible ? 'Automatisch geplant' : 'Keine zulässige Verlegung gefunden'}</strong><p>Startstücke je Reihe werden so gewählt, dass alle Teilstücke mindestens {project.flooring.minEndPieceLength} mm lang sind und benachbarte Fugen mindestens {project.flooring.minJointOffset ?? 300} mm Abstand haben.</p></div></div>}
           <details className="manual-controls"><summary>Manuell anpassen (Experten)</summary><label className="toggle-field"><input type="checkbox" checked={room.layout.mode === 'manual'} onChange={e => updateRoom(r => ({ ...r, layout: { ...r.layout, mode: e.target.checked ? 'manual' : 'automatic' } }))} />Manuelle Rasterplanung aktivieren</label>

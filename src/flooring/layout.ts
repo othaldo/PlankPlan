@@ -128,7 +128,7 @@ const autoCache = new Map<string, Layout>();
 export function layoutRoom(room: Room, flooring: Flooring): Layout {
   if (room.flooringEnabled === false) return emptyLayout(room);
   if (room.layout.mode === 'manual') return fillPrepared(prepareRoom(room, flooring), flooring, room.layout);
-  const key = JSON.stringify([room.polygon, room.layout.direction, room.layout.firstRowWidth, room.layout.pattern ?? 'optimized', flooring]);
+  const key = JSON.stringify([room.polygon, room.layout.direction, room.layout.firstRowWidth, room.layout.pattern ?? 'optimized', room.layout.fixedStagger, room.layout.startWithFullPlank ?? false, flooring]);
   const cached = autoCache.get(key); if (cached) return cached;
   const result = layoutAutomatic(room, flooring);
   if (autoCache.size >= 40) autoCache.delete(autoCache.keys().next().value!);

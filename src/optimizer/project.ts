@@ -12,7 +12,7 @@ export const planningSignature = (p: Project) => {
   return JSON.stringify([[f.length, f.width, f.thickness, f.expansionGap, f.minRowWidth, f.minEndPieceLength, f.jointOffset,
     f.minJointOffset ?? 300, f.boardsPerPack ?? null, f.reservePercent ?? 5, f.sawKerf ?? 3],
     p.floors.map(floor => [floor.id, floor.rooms.map(r => [r.id, r.polygon.map(point => [point.x, point.y]),
-      [r.layout.direction, r.layout.offsetX, r.layout.offsetY, r.layout.mode ?? 'automatic', r.layout.firstRowWidth ?? null, r.layout.pattern ?? 'optimized'], r.flooringEnabled !== false])])]);
+      [r.layout.direction, r.layout.offsetX, r.layout.offsetY, r.layout.mode ?? 'automatic', r.layout.firstRowWidth ?? null, r.layout.pattern ?? 'optimized', r.layout.fixedStagger ?? null, r.layout.startWithFullPlank ?? false], r.flooringEnabled !== false])])]);
 };
 interface Entry { key: string; room: Room; context: MaterialContext }
 interface Base { entries: Entry[]; layouts: Map<string, Layout>; errors: Map<string, string>; independentBoards: number; separatePackages: number | null }
