@@ -5,23 +5,25 @@ import { bounds, validatePolygon } from '../geometry/polygon';
 import type { Layout } from '../flooring/layout';
 import type { Floor, Point, Room } from '../model/types';
 import { Maximize, Minus, Plus } from 'lucide-react';
+import { snapRoomTranslation, snapToRooms } from '../geometry/snapping';
 
-export type Tool = 'select' | 'draw' | 'calibrate' | 'pan';
+export type Tool = 'select' | 'draw' | 'calibrate' | 'pan' | 'move-room';
 export function pathData(polygons: MultiPolygon) {
   return polygons.map(poly => poly.map(ring => `M ${ring.map(p => p.join(' ')).join(' L ')} Z`).join(' ')).join(' ');
 }
 const pointsString = (points: Point[]) => points.map(p => `${p.x},${p.y}`).join(' ');
 export function PlanCanvas({ floor, selectedId, layouts, tool, draft, setDraft, calibrationPoints, setCalibrationPoints,
-  onSelect, onRoom, onPolygon, onError, snap, showBoards }:
+  onSelect, onRoom, onPolygon, onError, snap, snapRooms, showBoards }:
   { floor: Floor; selectedId: string | null; layouts: Map<string, Layout>; tool: Tool;
     draft: Point[]; setDraft: (p: Point[]) => void; calibrationPoints: Point[]; setCalibrationPoints: (p: Point[]) => void;
     onSelect: (id: string) => void; onRoom: (polygon: Point[]) => void; onPolygon: (id: string, polygon: Point[]) => void;
-    onError: (message: string) => void; snap: number; showBoards: boolean }) {
+    onError: (message: string) => void; snap: number; snapRooms: boolean; showBoards: boolean }) {
   const svg = useRef<SVGSVGElement>(null);
   const [view, setView] = useState({ x: -450, y: -450, w: 7000, h: 5700 });
   const [cursor, setCursor] = useState<Point | null>(null);
-  const drag = useRef<{ kind: 'vertex' | 'pan'; id?: string; index?: number; point: Point; initial?: Point[]; view?: typeof view; current?: Point[] } | null>(null);
+  const drag = useRef<{ kind: 'vertex' | 'pan' | 'room'; id?: string; index?: number; point: Point; initial?: Point[]; view?: typeof view; current?: Point[] } | null>(null);
   const [preview, setPreview] = useState<{ id: string; polygon: Point[] } | null>(null);
+  const [snapTarget, setSnapTarget] = useState<Point | null>(null);
   const scale = floor.calibration?.mmPerPixel ?? 5;
   function fit() {
     const points = floor.rooms.flatMap(r => r.polygon);
@@ -38,13 +40,16 @@ export function PlanCanvas({ floor, selectedId, layouts, tool, draft, setDraft, 
     if (!matrix) return { x: 0, y: 0 };
     const p = new DOMPoint(clientX, clientY).matrixTransform(matrix.inverse()); return { x: p.x, y: p.y };
   }
-  function snapped(p: Point, shift: boolean): Point {
+  function tolerance() { const m = svg.current?.getScreenCTM(); return m ? 10 / Math.hypot(m.a, m.b) : view.w / 80; }
+  function snapped(p: Point, shift: boolean, excludeId?: string): Point {
     let result = { x: Math.round(p.x / snap) * snap, y: Math.round(p.y / snap) * snap };
     if (shift && draft.length) {
       const start = draft.at(-1)!; const length = Math.hypot(p.x - start.x, p.y - start.y);
       const angle = Math.round(Math.atan2(p.y - start.y, p.x - start.x) / (Math.PI / 4)) * Math.PI / 4;
       result = { x: start.x + length * Math.cos(angle), y: start.y + length * Math.sin(angle) };
-    } return result;
+    }
+    const target = snapRooms && (tool === 'draw' || drag.current?.kind === 'vertex') ? snapToRooms(p, floor.rooms, tolerance(), excludeId) : null;
+    setSnapTarget(target); return target ?? result;
   }
   function finish() { const error = validatePolygon(draft); if (error) onError(error); else onRoom(draft); }
   function click(e: ReactPointerEvent<SVGSVGElement>) {
@@ -72,16 +77,29 @@ export function PlanCanvas({ floor, selectedId, layouts, tool, draft, setDraft, 
       setView(v => ({ ...v, x: v.x + d.point.x - p.x, y: v.y + d.point.y - p.y }));
     }
     if (d?.kind === 'vertex' && d.initial && d.id !== undefined && d.index !== undefined) {
-      const polygon = d.initial.map((point, i) => i === d.index ? snapped(p, false) : point);
+      const polygon = d.initial.map((point, i) => i === d.index ? snapped(p, false, d.id) : point);
       d.current = polygon; setPreview({ id: d.id, polygon });
+    }
+    if (d?.kind === 'room' && d.initial && d.id) {
+      const delta = { x: p.x - d.point.x, y: p.y - d.point.y };
+      const moved = snapRoomTranslation(d.initial, delta, snapRooms ? floor.rooms : [], tolerance(), d.id);
+      d.current = moved.polygon; setPreview({ id: d.id, polygon: moved.polygon }); setSnapTarget(moved.target);
     }
   }
   function release() {
     const d = drag.current;
-    if (d?.kind === 'vertex' && d.id && d.current) {
+    if ((d?.kind === 'vertex' || d?.kind === 'room') && d.id && d.current) {
       const error = validatePolygon(d.current); if (error) onError(error); else onPolygon(d.id, d.current);
     }
-    drag.current = null; setPreview(null);
+    drag.current = null; setPreview(null); setSnapTarget(null);
+  }
+  function roomPointer(e: ReactPointerEvent<SVGElement>, room: Room) {
+    if (tool !== 'select' && tool !== 'move-room') return;
+    e.stopPropagation(); onSelect(room.id);
+    if (tool === 'move-room') {
+      drag.current = { kind: 'room', id: room.id, point: coordinate(e.clientX, e.clientY), initial: room.polygon };
+      svg.current?.setPointerCapture(e.pointerId);
+    }
   }
   function zoom(factor: number, center = { x: view.x + view.w / 2, y: view.y + view.h / 2 }) {
     if (view.w * factor < 100 || view.w * factor > 2e6) return;
@@ -101,16 +119,17 @@ export function PlanCanvas({ floor, selectedId, layouts, tool, draft, setDraft, 
         const layout = layouts.get(room.id), selected = room.id === selectedId, points = roomPoints(room);
         const b = bounds(points);
         return <g key={room.id}>
-          <polygon points={pointsString(points)} fill="rgba(233,238,226,.4)" stroke="none"
-            onPointerDown={e => { if (tool === 'select') { e.stopPropagation(); onSelect(room.id); } }} />
-          {showBoards && layout?.boards.map(board => <path key={board.id} d={pathData(board.polygon)} fillRule="evenodd"
+          <polygon points={pointsString(points)} fill={room.flooringEnabled === false ? 'rgba(167,177,183,.22)' : layout?.feasible === false ? 'rgba(189,97,59,.12)' : 'rgba(233,238,226,.4)'} stroke="none"
+            onPointerDown={e => roomPointer(e, room)} />
+          {showBoards && !(preview?.id === room.id) && layout?.boards.map(board => <path key={board.id} d={pathData(board.polygon)} fillRule="evenodd"
             fill={board.cut ? (board.row % 2 ? '#d5ad76' : '#dfbc88') : (board.row % 2 ? '#eee0c5' : '#e6d3af')}
             stroke={board.cut ? '#a47940' : '#b6a082'} strokeWidth="0.7" vectorEffect="non-scaling-stroke"
-            onPointerDown={e => { if (tool === 'select') { e.stopPropagation(); onSelect(room.id); } }}>
+            onPointerDown={e => roomPointer(e, room)}>
             <title>{`${room.name} · Reihe ${board.row + 1} · Diele ${board.column + 1}\n${board.cut ? 'Zuschnitt' : 'Ganze Diele'}: ${board.usedLength.toFixed(1)} × ${board.usedWidth.toFixed(1)} mm\nAusgangsdiele: ${board.source.length} × ${board.source.width} mm\nAbfallfläche: ${((board.source.length * board.source.width - board.area) / 1e6).toFixed(3)} m²`}</title>
           </path>)}
-          <polygon points={pointsString(points)} fill="none" stroke={selected ? '#4b6546' : '#8b9588'} strokeWidth={selected ? 2.5 : 1.5} vectorEffect="non-scaling-stroke" pointerEvents="none" />
+          <polygon points={pointsString(points)} fill="none" stroke={selected ? '#4b6546' : '#8b9588'} strokeDasharray={room.flooringEnabled === false ? '7 4' : undefined} strokeWidth={selected ? 2.5 : 1.5} vectorEffect="non-scaling-stroke" pointerEvents="none" />
           <text x={(b.minX + b.maxX) / 2} y={(b.minY + b.maxY) / 2} textAnchor="middle" fontSize={labelSize} className="room-label" pointerEvents="none">{room.name}</text>
+          {room.flooringEnabled === false && <text x={(b.minX + b.maxX) / 2} y={(b.minY + b.maxY) / 2 + labelSize * 1.5} textAnchor="middle" fontSize={labelSize * .75} fill="#6a7780" pointerEvents="none">ohne Laminat</text>}
           {selected && tool === 'select' && points.map((point, index) => <circle key={index} cx={point.x} cy={point.y} r={view.w / 330}
             fill="white" stroke="#4b6546" strokeWidth="2" vectorEffect="non-scaling-stroke" className="vertex"
             onPointerDown={e => { e.stopPropagation(); drag.current = { kind: 'vertex', id: room.id, index, point, initial: room.polygon };
@@ -127,6 +146,8 @@ export function PlanCanvas({ floor, selectedId, layouts, tool, draft, setDraft, 
         {calibrationPoints.length === 2 && <line x1={calibrationPoints[0].x} y1={calibrationPoints[0].y} x2={calibrationPoints[1].x} y2={calibrationPoints[1].y} stroke="#bd613b" strokeWidth="3" vectorEffect="non-scaling-stroke" />}
         {calibrationPoints.map((p, i) => <g key={i}><circle cx={p.x} cy={p.y} r={view.w / 250} fill="#bd613b" /><text x={p.x + labelSize} y={p.y} fontSize={labelSize} fill="#bd613b">{i ? 'B' : 'A'}</text></g>)}
       </g>}
+      {snapTarget && <g pointerEvents="none"><circle cx={snapTarget.x} cy={snapTarget.y} r={view.w / 180} fill="none" stroke="#2c9979" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+        <text x={snapTarget.x + labelSize} y={snapTarget.y - labelSize / 2} fill="#26795f" fontSize={labelSize * .7}>eingerastet</text></g>}
     </svg>
     <div className="canvas-scale"><span>{gridSize} mm Raster</span><span>Maße in Millimetern</span></div>
     <div className="zoom-controls"><button title="Verkleinern" onClick={() => zoom(1.2)}><Minus size={17} /></button>

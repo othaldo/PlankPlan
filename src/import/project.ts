@@ -11,10 +11,11 @@ const id = z.string().min(1).max(120);
 const polygon = z.array(point).min(3).max(512).superRefine((points, ctx) => {
   const error = validatePolygon(points); if (error) ctx.addIssue({ code: 'custom', message: error });
 });
-const layout = z.object({ direction: finite.min(-360).max(360), offsetX: finite.min(-1e6).max(1e6), offsetY: finite.min(-1e6).max(1e6) });
-const room = z.object({ id, name, polygon, layout });
+const layout = z.object({ direction: finite.min(-360).max(360), offsetX: finite.min(-1e6).max(1e6), offsetY: finite.min(-1e6).max(1e6), mode: z.enum(['automatic', 'manual']).optional() });
+const room = z.object({ id, name, polygon, layout, flooringEnabled: z.boolean().optional() });
 const flooring = z.object({ name, length: finite, width: finite, thickness: finite,
-  expansionGap: finite, minRowWidth: finite, minEndPieceLength: finite, jointOffset: finite }).superRefine((f, ctx) => {
+  expansionGap: finite, minRowWidth: finite, minEndPieceLength: finite, jointOffset: finite,
+  minJointOffset: finite.min(0).optional(), boardsPerPack: finite.int().min(1).max(500).optional(), reservePercent: finite.min(0).max(100).optional() }).superRefine((f, ctx) => {
     try { validateFlooring(f); } catch (e) { ctx.addIssue({ code: 'custom', message: (e as Error).message }); }
   });
 const background = z.object({ name, dataUrl: z.string().max(16e6).regex(/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=\r\n]+$/),
@@ -40,10 +41,13 @@ export function parseProject(text: string): Project {
   try { raw = JSON.parse(text); } catch { throw new Error('Die Datei enthält kein gültiges JSON.'); }
   const result = projectSchema.safeParse(raw);
   if (!result.success) throw new Error(`Ungültiges Projekt: ${result.error.issues[0].path.join('.')} – ${result.error.issues[0].message}`);
+  // Older projects predate pack metadata; restore only the positively identified product preset.
+  if (!result.data.flooring.boardsPerPack && result.data.flooring.length === 1285 && result.data.flooring.width === 194 && result.data.flooring.name.includes('Luxemburg'))
+    result.data.flooring.boardsPerPack = 10;
   return result.data;
 }
 const importPoint = z.union([point, z.tuple([finite, finite]).transform(([x, y]) => ({ x, y }))]);
-const roomsSchema = z.object({ rooms: z.array(z.object({ name, polygon: z.array(importPoint).min(3).max(512), layout: layout.optional() })).min(1).max(100) });
+const roomsSchema = z.object({ rooms: z.array(z.object({ name, polygon: z.array(importPoint).min(3).max(512), layout: layout.optional(), flooringEnabled: z.boolean().optional() })).min(1).max(100) });
 export function parseRooms(text: string): Room[] {
   const result = roomsSchema.safeParse(JSON.parse(text));
   if (!result.success) throw new Error('Erwartet wird { "rooms": [{ "name": "…", "polygon": [[x, y], …] }] } mit Millimeter-Koordinaten.');

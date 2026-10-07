@@ -7,7 +7,7 @@ import { PRESETS } from '../model/types';
 import type { Point, Room } from '../model/types';
 const material = { ...PRESETS[0], expansionGap: 0, jointOffset: 0 };
 function room(w: number, h: number): Room {
-  return { id: 'room', name: 'Room', polygon: [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h }, { x: 0, y: h }], layout: { direction: 0, offsetX: 0, offsetY: 0 } };
+  return { id: 'room', name: 'Room', polygon: [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h }, { x: 0, y: h }], layout: { direction: 0, offsetX: 0, offsetY: 0, mode: 'manual' } };
 }
 function verifyCoverage(r: Room, f = PRESETS[0]) {
   const layout = layoutRoom(r, f);
@@ -56,7 +56,7 @@ describe('board layout', () => {
     expect(l.boards.some(b => b.polygon.length > 1)).toBe(true);
   });
   it.each([0, 90, 37, -25, 180])('preserves area at direction %s degrees', direction => {
-    const r = room(4230, 3190); r.layout = { direction, offsetX: 187, offsetY: 53 }; verifyCoverage(r);
+    const r = room(4230, 3190); r.layout = { direction, offsetX: 187, offsetY: 53, mode: 'manual' }; verifyCoverage(r);
   });
   it('rotates world geometry and the layout together', () => {
     const r = room(4000, 3200), baseline = layoutRoom(r, PRESETS[0]);
@@ -66,8 +66,8 @@ describe('board layout', () => {
   });
   it('normalizes periodic offsets including negatives', () => {
     const a = room(4000, 3000), b = room(4000, 3000);
-    a.layout = { direction: 0, offsetX: 100, offsetY: 50 };
-    b.layout = { direction: 0, offsetX: 100 - 1285, offsetY: 50 + 194 };
+    a.layout = { direction: 0, offsetX: 100, offsetY: 50, mode: 'manual' };
+    b.layout = { direction: 0, offsetX: 100 - 1285, offsetY: 50 + 194, mode: 'manual' };
     expect(layoutRoom(a, PRESETS[0]).boards).toEqual(layoutRoom(b, PRESETS[0]).boards);
   });
   it('rejects impossible parameters and huge layouts before looping', () => {
@@ -84,7 +84,7 @@ describe('board layout', () => {
         const angle = j * Math.PI * 2 / 7, radius = 1000 + random() * 700;
         return { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius };
       });
-      const r = room(1, 1); r.polygon = points; r.layout = { direction: random() * 180, offsetX: random() * 1285, offsetY: random() * 194 };
+      const r = room(1, 1); r.polygon = points; r.layout = { direction: random() * 180, offsetX: random() * 1285, offsetY: random() * 194, mode: 'manual' };
       verifyCoverage(r);
     }
   });

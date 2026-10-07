@@ -2,9 +2,10 @@ export interface Point { x: number; y: number }
 export interface Flooring {
   name: string; length: number; width: number; thickness: number;
   expansionGap: number; minRowWidth: number; minEndPieceLength: number; jointOffset: number;
+  minJointOffset?: number; boardsPerPack?: number; reservePercent?: number;
 }
-export interface LayoutSettings { direction: number; offsetX: number; offsetY: number }
-export interface Room { id: string; name: string; polygon: Point[]; layout: LayoutSettings }
+export interface LayoutSettings { direction: number; offsetX: number; offsetY: number; mode?: 'automatic' | 'manual' }
+export interface Room { id: string; name: string; polygon: Point[]; layout: LayoutSettings; flooringEnabled?: boolean }
 export interface Background {
   name: string; dataUrl: string; widthPx: number; heightPx: number; opacity: number; origin: Point;
 }
@@ -13,9 +14,9 @@ export interface Floor { id: string; name: string; background: Background | null
 export interface Project { version: 1; name: string; flooring: Flooring; floors: Floor[] }
 export const PRESETS: Flooring[] = [
   { name: 'Parador Selected · Eiche Luxemburg', length: 1285, width: 194, thickness: 8,
-    expansionGap: 10, minRowWidth: 60, minEndPieceLength: 300, jointOffset: 400 },
+    expansionGap: 10, minRowWidth: 60, minEndPieceLength: 300, jointOffset: 400, minJointOffset: 300, boardsPerPack: 10, reservePercent: 5 },
   { name: 'Wunderwerk · Eiche Malmö', length: 1292, width: 246, thickness: 8,
-    expansionGap: 10, minRowWidth: 60, minEndPieceLength: 300, jointOffset: 400 },
+    expansionGap: 10, minRowWidth: 60, minEndPieceLength: 300, jointOffset: 400, minJointOffset: 300, reservePercent: 5 },
 ];
 export const newFloor = (name: string): Floor => ({ id: crypto.randomUUID(), name, background: null, calibration: null, rooms: [] });
 export function demoProject(): Project {

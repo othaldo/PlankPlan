@@ -2,19 +2,24 @@ import polygonClipping from 'polygon-clipping';
 import type { MultiPolygon } from 'polygon-clipping';
 import { area, bounds, EPS, inset, mod, polygonPoints, rectangle, transform } from '../geometry/polygon';
 import type { Flooring, LayoutSettings, Room } from '../model/types';
+import { layoutAutomatic } from '../optimizer/automatic';
 
 export interface Board {
   id: string; row: number; column: number; source: { x: number; y: number; length: number; width: number; rotation: number };
-  polygon: MultiPolygon; area: number; cut: boolean; usedLength: number; usedWidth: number;
+  polygon: MultiPolygon; area: number; cut: boolean; usedLength: number; usedWidth: number; pieceLengths: number[];
 }
-export interface Row { index: number; width: number; fragmentWidths: number[]; firstLength: number; lastLength: number }
+export interface Row { index: number; width: number; fragmentWidths: number[]; firstLength: number; lastLength: number; originX: number; joints: number[] }
 export interface Layout {
   boards: Board[]; rows: Row[]; inner: MultiPolygon; roomArea: number; coveredArea: number;
   fullBoards: number; cutBoards: number; materialArea: number; wasteArea: number; wastePercent: number;
-  firstRowWidth: number; lastRowWidth: number; warnings: string[];
+  firstRowWidth: number; lastRowWidth: number; warnings: string[]; feasible: boolean; resolvedOffsetY: number;
 }
 export interface PreparedRoom { inner: MultiPolygon; local: MultiPolygon; extent: ReturnType<typeof bounds>; roomArea: number }
 export function validateFlooring(f: Flooring) {
+  if ((f.minJointOffset !== undefined && (!Number.isFinite(f.minJointOffset) || f.minJointOffset < 0 || f.minJointOffset > f.length / 2)) ||
+    (f.boardsPerPack !== undefined && (!Number.isInteger(f.boardsPerPack) || f.boardsPerPack < 1 || f.boardsPerPack > 500)) ||
+    (f.reservePercent !== undefined && (!Number.isFinite(f.reservePercent) || f.reservePercent < 0 || f.reservePercent > 100)))
+    throw new Error('Ungültiger Mindest-Fugenversatz, Paketinhalt oder Reserve.');
   if (![f.length, f.width, f.thickness, f.expansionGap, f.minRowWidth, f.minEndPieceLength, f.jointOffset].every(Number.isFinite) ||
     f.length < 100 || f.length > 5000 || f.width < 20 || f.width > 1000 || f.thickness <= 0 || f.thickness > 100 ||
     f.expansionGap < 0 || f.expansionGap > 100 || f.minRowWidth <= 0 || f.minRowWidth > f.width ||
@@ -29,7 +34,7 @@ export function prepareRoom(room: Room, flooring: Flooring): PreparedRoom {
   const local = transform(inner, -room.layout.direction);
   return { inner, local, extent: bounds(polygonPoints(local)), roomArea: area([[room.polygon.map(p => [p.x, p.y])]]) };
 }
-export function fillPrepared(prepared: PreparedRoom, f: Flooring, settings: LayoutSettings): Layout {
+export function fillPrepared(prepared: PreparedRoom, f: Flooring, settings: LayoutSettings, rowOrigins?: Map<number, number>): Layout {
   const { local, extent: b } = prepared;
   const offsetY = mod(settings.offsetY, f.width), offsetX = mod(settings.offsetX, f.length);
   const originY = b.minY - offsetY;
@@ -43,7 +48,7 @@ export function fillPrepared(prepared: PreparedRoom, f: Flooring, settings: Layo
     if (area(band) < 0.001) continue;
     const rb = bounds(polygonPoints(band));
     const fragmentWidths = band.map(poly => { const bb = bounds(polygonPoints([poly])); return bb.maxY - bb.minY; });
-    const originX = b.minX - offsetX + mod(row * f.jointOffset, f.length);
+    const originX = rowOrigins?.get(row) ?? b.minX - offsetX + mod(row * f.jointOffset, f.length);
     const firstColumn = Math.floor((rb.minX - originX + 1e-7) / f.length);
     const lastColumn = Math.ceil((rb.maxX - originX - 1e-7) / f.length) - 1;
     const inRow: Board[] = [];
@@ -56,10 +61,13 @@ export function fillPrepared(prepared: PreparedRoom, f: Flooring, settings: Layo
         source: { x, y, length: f.length, width: f.width, rotation: settings.direction },
         polygon: transform(clipped, settings.direction), area: usedArea,
         cut: Math.abs(usedArea - f.length * f.width) > 0.1,
-        usedLength: bb.maxX - bb.minX, usedWidth: bb.maxY - bb.minY };
+        usedLength: bb.maxX - bb.minX, usedWidth: bb.maxY - bb.minY,
+        pieceLengths: clipped.map(poly => { const p = bounds(polygonPoints([poly])); return p.maxX - p.minX; }) };
       boards.push(board); inRow.push(board);
     }
-    if (inRow.length) rows.push({ index: row, width: rb.maxY - rb.minY, fragmentWidths,
+    const spans = band.map(poly => bounds(polygonPoints([poly])));
+    const joints = inRow.map(board => board.source.x + f.length).filter(x => spans.some(s => x > s.minX + EPS && x < s.maxX - EPS));
+    if (inRow.length) rows.push({ index: row, width: rb.maxY - rb.minY, fragmentWidths, originX, joints,
       firstLength: inRow[0].usedLength, lastLength: inRow[inRow.length - 1].usedLength });
   }
   const coveredArea = boards.reduce((a, board) => a + board.area, 0);
@@ -70,17 +78,29 @@ export function fillPrepared(prepared: PreparedRoom, f: Flooring, settings: Layo
   if (firstRowWidth < f.minRowWidth - EPS || lastRowWidth < f.minRowWidth - EPS) warnings.push(`Randreihe unter ${f.minRowWidth} mm. Quer-Offset optimieren.`);
   const narrow = rows.filter(row => row.fragmentWidths.some(w => w < f.minRowWidth - EPS)).length;
   if (narrow) warnings.push(`${narrow} Reihen mit schmalen Bereichen, z. B. an Nischen oder schrägen Wänden.`);
-  const short = boards.filter(board => board.usedLength < f.minEndPieceLength - EPS).length;
-  if (short) warnings.push(`${short} Teilstücke kürzer als ${f.minEndPieceLength} mm. Längs-Offset oder Richtung prüfen.`);
+  const short = boards.flatMap(board => board.pieceLengths).filter(length => length < f.minEndPieceLength - EPS).length;
+  if (short) warnings.push(`${short} Teilstücke kürzer als ${f.minEndPieceLength} mm. Diese manuelle Verlegung ist nicht zulässig; automatische Planung verwenden.`);
   const jointDistance = Math.min(f.jointOffset, f.length - f.jointOffset);
-  if (jointDistance < 300) warnings.push(`Stirnfugenversatz nur ${Math.round(jointDistance)} mm. Herstellervorgaben prüfen.`);
+  if (!rowOrigins && jointDistance < (f.minJointOffset ?? 300)) warnings.push(`Stirnfugenversatz nur ${Math.round(jointDistance)} mm. Automatische Planung verwenden.`);
   const split = boards.filter(board => board.polygon.length > 1).length;
   if (split) warnings.push(`${split} Dielen werden in getrennte Teilstücke geschnitten.`);
   return { boards, rows, inner: prepared.inner, roomArea: prepared.roomArea, coveredArea,
     fullBoards: boards.filter(b => !b.cut).length, cutBoards: boards.filter(b => b.cut).length,
     materialArea, wasteArea, wastePercent: materialArea ? wasteArea / materialArea * 100 : 0,
-    firstRowWidth, lastRowWidth, warnings };
+    firstRowWidth, lastRowWidth, warnings, feasible: short === 0, resolvedOffsetY: offsetY };
 }
+export function emptyLayout(room: Room, warnings: string[] = []): Layout {
+  return { boards: [], rows: [], inner: [], roomArea: area([[room.polygon.map(p => [p.x, p.y])]]), coveredArea: 0,
+    fullBoards: 0, cutBoards: 0, materialArea: 0, wasteArea: 0, wastePercent: 0, firstRowWidth: 0, lastRowWidth: 0,
+    warnings, feasible: warnings.length === 0, resolvedOffsetY: 0 };
+}
+const autoCache = new Map<string, Layout>();
 export function layoutRoom(room: Room, flooring: Flooring): Layout {
-  return fillPrepared(prepareRoom(room, flooring), flooring, room.layout);
+  if (room.flooringEnabled === false) return emptyLayout(room);
+  if (room.layout.mode === 'manual') return fillPrepared(prepareRoom(room, flooring), flooring, room.layout);
+  const key = JSON.stringify([room.polygon, room.layout.direction, flooring]);
+  const cached = autoCache.get(key); if (cached) return cached;
+  const result = layoutAutomatic(room, flooring);
+  if (autoCache.size >= 40) autoCache.delete(autoCache.keys().next().value!);
+  autoCache.set(key, result); return result;
 }

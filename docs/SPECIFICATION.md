@@ -12,7 +12,8 @@ Lokale React/TypeScript/Vite-Web-App für eine praktische Laminat-Verlegeplanung
 - Jede Etage: `id`, `name`, `background`, `calibration`, `rooms[]`.
 - Hintergrund: eingebettetes Bild, Originalabmessungen in Pixeln, Deckkraft, Ursprung in Millimetern.
 - Kalibrierung: zwei Bildpixel-Punkte, reale Strecke in Millimetern, daraus berechnete Millimeter pro Pixel.
-- Raum: `id`, `name`, einfaches polygonales Raumprofil, `layout` mit Richtung, Längs-Offset und Quer-Offset.
+- Raum: `id`, `name`, einfaches polygonales Raumprofil, `flooringEnabled` zum Ausschließen aus der Laminatplanung, `layout` mit Richtung, Offsets und optionalem Modus `automatic`/`manual`. Fehlender Modus bedeutet automatisch.
+- Zusätzliche Materialwerte: `minJointOffset`, `boardsPerPack`, `reservePercent`. Alte Projektdateien bleiben ladbar.
 - Dielenberechnung: Reihen- und Spaltenindex, Ausgangsrechteck mit Rotation, verbleibendes Zuschnitt-Multipolygon, belegte Fläche, ganze/geschnittene Diele und benötigte Abmessungen.
 
 Default-Material: Parador Selected Eiche Luxemburg, 1285 × 194 × 8 mm. Vergleichsvorlage: Wunderwerk Eiche Malmö, 1292 × 246 × 8 mm. Default-Bewegungsfuge 10 mm, Mindest-Reihenbreite 60 mm, Mindest-Endstücklänge 300 mm, Reihenversatz 400 mm; Werte editierbar und anhand der Herstelleranleitung anpassbar.
@@ -25,22 +26,26 @@ Default-Material: Parador Selected Eiche Luxemburg, 1285 × 194 × 8 mm. Verglei
 - Polygonraum zeichnen und schließen, konkave Räume unterstützen; ungültige Konturen abweisen.
 - Zeichnen mit Millimeter-Raster und optionalen 45°-Winkeln; letzten Punkt zurücknehmen und abbrechen.
 - Räume auswählen, umbenennen, duplizieren, löschen; bestehende Eckpunkte ziehen.
+- Laminat pro Raum ein-/ausschalten; ausgeschlossene Räume behalten ihre Geometrie und benötigen kein Material.
+- Ecken und Wandsegmente beim Zeichnen, Eckpunkte-Ziehen und Verschieben ganzer Räume einrasten lassen. Toleranz entspricht 10 Bildschirmpixeln bei jedem Zoom; vollständige Raumverschiebung verändert keine Maße.
 - Reale Dielenmaße eingeben, Vorlagen wechseln, Verlegerichtung 0°/90°/freier Winkel einstellen.
 - Bewegungsfuge geometrisch nach innen versetzen; Räume mit echten Dielen füllen und tatsächliche Zuschnittpolygone an Grenzen anzeigen.
 - Ganze und zugeschnittene Dielen unterscheiden; Dieleninformationen bei Hover.
-- Quer-Offset interaktiv verändern, Längs-Offset manuell einstellen.
-- Erste und letzte Reihenbreite auswerten; kurze Stücke und schmale Bereiche kennzeichnen.
-- Automatischen optimalen Quer-Offset unter geprüften Kandidaten suchen, anschließend manuell ändern.
+- Automatische Planung als Standard: Randreihen optimieren, individuelle Startstücke je Reihe bestimmen und den Mindest-Fugenabstand zwischen benachbarten Reihen einhalten.
+- Jedes getrennte Zuschnittfragment muss mindestens die konfigurierte Mindeststücklänge besitzen. Gibt die Suche keine gültige Lösung her, werden keine ungültigen Dielen ausgegeben und keine Paketmenge behauptet.
+- Erste und letzte Reihenbreite sowie Start- und Endstücke aller Reihen auswerten.
+- Manuelle Quer-/Längs-Rasterkontrolle als expliziter Expertenmodus erhalten.
 - Raumfläche, verlegte Fläche, ganze/geschnittene Dielen, Ausgangsmaterial und rechnerischen Verschnitt auswerten.
+- Benötigte Pakete je Raum aus den Ausgangsdielen und einer einstellbaren Zusatzreserve aufrunden. Zuschnittabfall ist bereits in der Dielenanzahl enthalten. Reststücke werden noch nicht mehrfach verwendet.
 - Gesamtes Projekt als JSON speichern/laden, einschließlich Bilder und Maßstab; zusätzliche Räume als JSON einfügen.
 - Lokaler Browserspeicher mit Hinweis bei Speicherfehlern.
 - Engine-Tests und Browser-Integrationstests.
 
 ## Nächste Ausbaustufen aus der vollständigen Spezifikation
 
-1. Gemeinsame Suche über Quer-/Längs-Offset, Richtung und Anfangsstücklänge. Gewichtete Bewertung: schmale Reihen, kurze Endstücke, Stirnfugenabstand, Abfallfläche und Ausgangsdielenmenge. Längsoptimierung ist nicht Bestandteil des angeforderten MVP.
+1. Suche über mehrere Richtungen und gemeinsame Optimierung mit Reststück-Inventar. Automatische Startstücksuche mit Mindest-Endstücklänge und Fugenabstand ist bereits implementiert; die Suche erhebt keinen Anspruch auf globale Optimalität.
 2. Reststück-Inventar: Größe, Ausgangsdiele, Herkunft, Schnittart und intakte Klickkanten; geeignete Endabschnitte als nächste Anfangsstücke verwenden. Kein rein flächenbasierter Wiederverwendungsansatz.
-3. Exportierbarer Schnittplan und Dielen-/Reststückzuordnung. Sägeblattverlust, Packungsgrößen, Kaufreserve und vollständige Mengenplanung.
+3. Exportierbarer Schnittplan und Dielen-/Reststückzuordnung. Sägeblattverlust und projektweite Material-/Reststückplanung. Packungsgrößen und Zusatzreserve je Raum sind bereits umgesetzt.
 4. Aussparungen für Kamin, Treppe, Einbauten und weitere Hindernisse.
 5. PDF-Grundrissimport, Hintergrund verschieben/drehen, Ausrichtung an längster Wand oder Fensterlicht.
 6. Punkte in bestehende Konturen einfügen/entfernen, direkte Drehgriffe, zusätzliche Maßbeschriftungen.

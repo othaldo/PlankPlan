@@ -30,4 +30,13 @@ describe('project JSON', () => {
     expect(a[0].polygon).toEqual(b[0].polygon); expect(a[0].id).not.toBe(b[0].id);
     expect(a[0].layout).toEqual({ direction: 0, offsetX: 0, offsetY: 0 });
   });
+  it('round-trips disabled rooms, automatic/manual modes and package settings', () => {
+    const p = demoProject(); p.floors[0].rooms[0].flooringEnabled = false; p.floors[0].rooms[0].layout.mode = 'manual';
+    expect(parseProject(serializeProject(p))).toEqual(p);
+    expect(parseRooms('{"rooms":[{"name":"Bad","flooringEnabled":false,"polygon":[[0,0],[3000,0],[3000,3000],[0,3000]]}]}')[0].flooringEnabled).toBe(false);
+  });
+  it('restores known pack metadata when loading a legacy Luxemburg project', () => {
+    const p = demoProject(); delete p.flooring.boardsPerPack;
+    expect(parseProject(serializeProject(p)).flooring.boardsPerPack).toBe(10);
+  });
 });

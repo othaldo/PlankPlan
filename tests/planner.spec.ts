@@ -5,6 +5,9 @@ test('changes real material, optimizes the offset, persists and round-trips a pr
   await expect(page.getByRole('heading', { name: 'Wohnzimmer' })).toBeVisible();
   await page.getByLabel('Laminatvorlage').selectOption('1');
   await expect(page.getByLabel('Dielenbreite')).toHaveValue('246');
+  await expect(page.getByText('Automatisch geplant', { exact: true })).toBeVisible();
+  await page.getByText('Manuell anpassen (Experten)', { exact: true }).click();
+  await page.getByLabel('Manuelle Rasterplanung aktivieren').check();
   await page.getByRole('button', { name: 'Quer-Offset optimieren' }).click();
   await expect(page.getByRole('status')).toContainText('Quer-Offset optimiert', { timeout: 20000 });
   const offset = await page.getByLabel('Quer-Offset').inputValue();
@@ -24,6 +27,44 @@ test('changes real material, optimizes the offset, persists and round-trips a pr
   await expect(page.getByRole('button', { name: 'Dachgeschoss' })).toBeVisible();
   await page.screenshot({ path: 'test-results/plankplan-desktop.png', fullPage: true });
   expect(errors).toEqual([]);
+});
+test('automatically corrects short end pieces, shows packs and excludes disabled rooms', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByText('Automatisch geplant', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Quer-Offset')).not.toBeVisible();
+  const titles = await page.locator('svg path > title').allTextContents();
+  expect(titles.length).toBeGreaterThan(0);
+  for (const title of titles) {
+    const length = title.match(/(?:Zuschnitt|Ganze Diele): ([\d.]+)/)?.[1]; expect(Number(length)).toBeGreaterThanOrEqual(299.99);
+  }
+  const expectedPacks = Math.ceil(Math.ceil(titles.length * 1.05 - 1e-9) / 10);
+  await expect(page.locator('.package-result strong')).toHaveText(`${expectedPacks} Pakete für diesen Raum`);
+  await page.getByLabel('Laminat in diesem Raum verlegen').uncheck();
+  await expect(page.locator('svg path > title')).toHaveCount(0);
+  await expect(page.locator('.package-result')).toHaveCount(0);
+  await expect(page.getByText('In diesem Raum ist Laminat ausgeschaltet.', { exact: false })).toBeVisible();
+  await page.waitForTimeout(500); await page.reload();
+  await expect(page.getByLabel('Laminat in diesem Raum verlegen')).not.toBeChecked();
+  await page.getByLabel('Laminat in diesem Raum verlegen').check();
+  await expect(page.getByText('Automatisch geplant', { exact: true })).toBeVisible();
+  await page.screenshot({ path: 'test-results/plankplan-automatic.png', fullPage: true });
+});
+test('snaps an entire room flush against an adjacent room wall without changing its size', async ({ page }) => {
+  await page.goto('/'); await page.getByRole('button', { name: 'Etage hinzufügen' }).click();
+  await page.getByRole('button', { name: 'Räume aus JSON einfügen' }).click();
+  await page.getByLabel('Raumdefinitionen als JSON').fill('{"rooms":[{"name":"Links","flooringEnabled":false,"polygon":[[0,0],[3000,0],[3000,3000],[0,3000]]},{"name":"Rechts","flooringEnabled":false,"polygon":[[3500,0],[5500,0],[5500,3000],[3500,3000]]}]}');
+  await page.getByRole('button', { name: 'Räume hinzufügen', exact: true }).click();
+  await page.getByRole('button', { name: 'Plan einpassen' }).click();
+  await page.getByRole('button', { name: 'Raum verschieben', exact: true }).click();
+  const svg = page.getByRole('img', { name: 'Interaktiver Verlegeplan' });
+  const screenPoint = async (x: number, y: number) => svg.evaluate((node, p) => { const q = new DOMPoint(p.x, p.y).matrixTransform((node as SVGSVGElement).getScreenCTM()!); return { x: q.x, y: q.y }; }, { x, y });
+  const start = await screenPoint(4500, 1500), end = await screenPoint(4020, 1500);
+  await page.mouse.move(start.x, start.y); await page.mouse.down(); await page.mouse.move(end.x, end.y, { steps: 5 }); await page.mouse.up();
+  await page.waitForTimeout(500);
+  const polygon = await page.evaluate(() => JSON.parse(localStorage.getItem('plankplan.project.v1')!).floors[1].rooms[1].polygon);
+  expect(polygon[0].x).toBeCloseTo(3000); expect(polygon[1].x - polygon[0].x).toBeCloseTo(2000);
+  expect(polygon[2].y - polygon[1].y).toBeCloseTo(3000);
+  await page.screenshot({ path: 'test-results/plankplan-adjacent-rooms.png', fullPage: true });
 });
 test('loads an image, calibrates two points and traces a polygon in world coordinates', async ({ page }) => {
   await page.goto('/'); await page.getByRole('button', { name: 'Etage hinzufügen' }).click();

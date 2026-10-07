@@ -3,7 +3,7 @@ import { optimizeTransverse, scoreLayout } from './transverse';
 import { layoutRoom } from '../flooring/layout';
 import { PRESETS } from '../model/types';
 import type { Room } from '../model/types';
-function room(height: number): Room { return { id: 'test', name: 'Test', polygon: [{ x: 0, y: 0 }, { x: 5200, y: 0 }, { x: 5200, y: height }, { x: 0, y: height }], layout: { direction: 0, offsetX: 100, offsetY: 0 } }; }
+function room(height: number): Room { return { id: 'test', name: 'Test', polygon: [{ x: 0, y: 0 }, { x: 5200, y: 0 }, { x: 5200, y: height }, { x: 0, y: height }], layout: { direction: 0, offsetX: 100, offsetY: 0, mode: 'manual' } }; }
 describe('transverse optimizer', () => {
   it('turns a 27 mm strip into balanced 110.5 mm edge rows', () => {
     const f = { ...PRESETS[0], expansionGap: 0 }, r = room(194 * 10 + 27);

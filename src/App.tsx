@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDownToLine, ArrowUpFromLine, Check, ChevronRight, Copy, FileImage, Hand, Layers, MousePointer2, Plus, Ruler, ScanLine, Sparkles, Trash2, TriangleAlert, X } from 'lucide-react';
+import { ArrowDownToLine, ArrowUpFromLine, Check, ChevronRight, Copy, FileImage, Hand, Layers, MousePointer2, Move, Plus, Ruler, ScanLine, Sparkles, Trash2, TriangleAlert, X } from 'lucide-react';
 import { calibrate, scaleAround } from './geometry/calibration';
 import { validatePolygon } from './geometry/polygon';
 import { layoutRoom, validateFlooring } from './flooring/layout';
 import type { Layout } from './flooring/layout';
+import { packageQuantity } from './flooring/packages';
 import { parseProject, parseRooms } from './import/project';
 import { downloadProject, serializeProject } from './export/project';
 import { demoProject, newFloor, PRESETS } from './model/types';
@@ -42,6 +43,7 @@ function App() {
   const [calibrationPoints, setCalibrationPoints] = useState<Point[]>([]);
   const [distance, setDistance] = useState(4000);
   const [snap, setSnap] = useState(10);
+  const [snapRooms, setSnapRooms] = useState(true);
   const [showBoards, setShowBoards] = useState(true);
   const [notice, setNotice] = useState(initial.error);
   const [saveState, setSaveState] = useState('Lokal gespeichert');
@@ -59,6 +61,7 @@ function App() {
     } return { layouts, errors };
   }, [floor.rooms, project.flooring]);
   const layout = room ? computation.layouts.get(room.id) : undefined;
+  const packages = layout?.feasible && room?.flooringEnabled !== false ? packageQuantity(layout.boards.length, project.flooring) : null;
   const totalArea = [...computation.layouts.values()].reduce((a, l) => a + l.roomArea, 0) / 1e6;
 
   useEffect(() => {
@@ -162,7 +165,7 @@ function App() {
       updateFloor(f => ({ ...f, rooms: [...f.rooms, ...next] })); setRoomId(next[0].id); setRoomsDialog(false); setNotice(`${next.length} Räume hinzugefügt.`);
     } catch (e) { setNotice((e as Error).message); }
   }
-  const tools = [{ id: 'select', label: 'Auswählen', icon: MousePointer2 }, { id: 'draw', label: 'Raum zeichnen', icon: ScanLine },
+  const tools = [{ id: 'select', label: 'Auswählen', icon: MousePointer2 }, { id: 'draw', label: 'Raum zeichnen', icon: ScanLine }, { id: 'move-room', label: 'Raum verschieben', icon: Move },
     { id: 'calibrate', label: 'Kalibrieren', icon: Ruler }, { id: 'pan', label: 'Verschieben', icon: Hand }] as const;
   const canDraw = !floor.background || !!floor.calibration;
 
@@ -201,11 +204,12 @@ function App() {
         </section>
         <section className="section"><h3><span className="step-number">02</span>Räume</h3>
           {floor.rooms.map(r => <button key={r.id} className={r.id === roomId ? 'room-item active' : 'room-item'} onClick={() => { setRoomId(r.id); selectTool('select'); }}>
-            <span className="room-dot" /><span>{r.name}</span><small>{computation.layouts.has(r.id) ? `${format(computation.layouts.get(r.id)!.roomArea / 1e6)} m²` : 'Prüfen'}</small><ChevronRight size={14} /></button>)}
+            <span className="room-dot" /><span>{r.name}</span><small>{r.flooringEnabled === false ? 'ohne Laminat' : computation.layouts.has(r.id) ? `${format(computation.layouts.get(r.id)!.roomArea / 1e6)} m²` : 'Prüfen'}</small><ChevronRight size={14} /></button>)}
           {!floor.rooms.length && <p className="hint">Zeichne die Raumkontur auf dem Plan oder füge Räume als JSON hinzu.</p>}
           <div className="button-row"><button className="secondary" disabled={!canDraw} onClick={() => selectTool('draw')}><Plus size={15} />Raum zeichnen</button>
             <button className="icon-button" title="Räume aus JSON einfügen" onClick={() => setRoomsDialog(true)}><ArrowUpFromLine size={16} /></button></div>
           {room && <><label className="field"><span>Raumname</span><input aria-label="Raumname" value={room.name} maxLength={120} onChange={e => updateRoom(r => ({ ...r, name: e.target.value || 'Raum' }))} /></label>
+            <label className="toggle-field"><input type="checkbox" checked={room.flooringEnabled !== false} onChange={e => updateRoom(r => ({ ...r, flooringEnabled: e.target.checked }))} />Laminat in diesem Raum verlegen</label>
             <div className="button-row"><button className="text-button muted" onClick={() => {
               if (floor.rooms.length >= 100) { setNotice('Maximal 100 Räume pro Etage.'); return; }
               const clone = { ...room, id: crypto.randomUUID(), name: `${room.name.slice(0, 108)} Kopie`, polygon: room.polygon.map(p => ({ x: p.x + 600, y: p.y + 600 })) };
@@ -225,9 +229,13 @@ function App() {
             <NumberField label="Dielenbreite" value={project.flooring.width} min={20} max={1000} onChange={width => updateMaterial({ width, name: 'Eigene Maße' })} /></div>
           <div className="field-pair"><NumberField label="Stärke" value={project.flooring.thickness} min={1} max={100} onChange={thickness => updateMaterial({ thickness })} />
             <NumberField label="Bewegungsfuge" value={project.flooring.expansionGap} max={100} onChange={expansionGap => updateMaterial({ expansionGap })} /></div>
+          <div className="field-pair"><NumberField label="Dielen pro Paket" value={project.flooring.boardsPerPack ?? 0} max={500} unit="Stk." onChange={boardsPerPack => updateMaterial({ boardsPerPack: boardsPerPack || undefined })} />
+            <NumberField label="Zusätzliche Reserve" value={project.flooring.reservePercent ?? 5} max={100} unit="%" onChange={reservePercent => updateMaterial({ reservePercent })} /></div>
+          {!project.flooring.boardsPerPack && <p className="hint">Paketinhalt von der Verpackung eingeben, damit die Paketmenge berechnet werden kann.</p>}
           <details><summary>Verlegeregeln</summary><NumberField label="Mindest-Reihenbreite" value={project.flooring.minRowWidth} min={1} max={project.flooring.width} onChange={minRowWidth => updateMaterial({ minRowWidth })} />
             <NumberField label="Mindest-Endstück" value={project.flooring.minEndPieceLength} min={1} max={project.flooring.length} onChange={minEndPieceLength => updateMaterial({ minEndPieceLength })} />
             <NumberField label="Stirnfugenversatz je Reihe" value={project.flooring.jointOffset} max={project.flooring.length - 1} onChange={jointOffset => updateMaterial({ jointOffset })} />
+            <NumberField label="Mindest-Fugenversatz" value={project.flooring.minJointOffset ?? 300} max={project.flooring.length / 2} onChange={minJointOffset => updateMaterial({ minJointOffset })} />
             <p className="hint">Planungswerte. Bitte an die Verlegeanleitung deines Bodens anpassen.</p></details>
         </section>
       </aside>
@@ -236,40 +244,48 @@ function App() {
         <div className="canvas-toolbar"><div className="tool-group">{tools.map(t => <button key={t.id} className={tool === t.id ? 'active' : ''}
           disabled={(t.id === 'calibrate' && !floor.background) || (t.id === 'draw' && !canDraw)} onClick={() => selectTool(t.id)} title={t.label}><t.icon size={16} /><span>{t.label}</span></button>)}</div>
           <label className="snap-select">Raster <select aria-label="Zeichenraster" value={snap} onChange={e => setSnap(Number(e.target.value))}>{[1, 10, 50, 100].map(n => <option key={n} value={n}>{n} mm</option>)}</select></label></div>
+        <label className="snap-rooms-control"><input type="checkbox" checked={snapRooms} onChange={e => setSnapRooms(e.target.checked)} />An anderen Raumkanten einrasten <small>beim Zeichnen, Eckpunkte ziehen und Raum verschieben</small></label>
         <div className="drawing-help">{tool === 'draw' ? <><ScanLine size={14} />Eckpunkte anklicken · ersten Punkt zum Schließen wählen · Shift: 45° · Esc: Abbrechen</> :
           tool === 'calibrate' ? <><Ruler size={14} />Zwei Punkte einer bekannten Strecke im Grundriss anklicken.</> :
           tool === 'pan' ? <><Hand size={14} />Plan mit gedrückter Maustaste verschieben · Mausrad zum Zoomen.</> :
+          tool === 'move-room' ? <><Move size={14} />Raum anklicken und ziehen. Nahe Ecken und Wände rasten exakt zusammen.</> :
           <><MousePointer2 size={14} />Raum auswählen · Eckpunkte ziehen · Mausrad zum Zoomen.</>}
           {tool === 'draw' && draft.length > 0 && <div className="drawing-actions"><button onClick={() => setDraft(draft.slice(0, -1))}>Punkt zurück</button><button disabled={draft.length < 3} onClick={() => addRoom(draft)}>Raum schließen</button></div>}</div>
         <PlanCanvas floor={floor} selectedId={roomId} layouts={computation.layouts} tool={tool} draft={draft} setDraft={setDraft}
           calibrationPoints={calibrationPoints} setCalibrationPoints={setCalibrationPoints} onSelect={setRoomId} onRoom={addRoom}
           onPolygon={(id, polygon) => updateFloor(f => ({ ...f, rooms: f.rooms.map(r => r.id === id ? { ...r, polygon } : r) }))}
-          onError={setNotice} snap={snap} showBoards={showBoards} />
+          onError={setNotice} snap={snap} snapRooms={snapRooms} showBoards={showBoards} />
         <div className="canvas-footer"><div className="legend"><span><i className="legend-full" />Ganze Diele</span><span><i className="legend-cut" />Zuschnitt</span><span><i className="legend-outline" />Raumkontur</span></div>
           <label><input type="checkbox" checked={showBoards} onChange={e => setShowBoards(e.target.checked)} />Dielen anzeigen</label></div>
         <div className="plan-note"><Ruler size={19} /><p><strong>Jede Diele hat ihr echtes Maß.</strong> Der Plan zeigt die verbleibende Geometrie nach dem Zuschnitt. Die Bewegungsfuge bleibt an der Raumkontur frei.</p></div>
       </main>
       <aside className="results-panel"><span className="eyebrow">VERLEGUNG & ERGEBNIS</span><h2>{room?.name ?? 'Raum auswählen'}</h2>
-        {room ? <><section className="layout-controls"><h3>Richtung & Start</h3><div className="direction-buttons">{[0, 90].map(angle => <button className={room.layout.direction === angle ? 'active' : ''} key={angle} onClick={() => updateRoom(r => ({ ...r, layout: { ...r.layout, direction: angle } }))}>{angle === 0 ? '↔' : '↕'} {angle}°</button>)}</div>
+        {room && room.flooringEnabled !== false ? <><section className="layout-controls"><h3>Richtung & Planung</h3><div className="direction-buttons">{[0, 90].map(angle => <button className={room.layout.direction === angle ? 'active' : ''} key={angle} onClick={() => updateRoom(r => ({ ...r, layout: { ...r.layout, direction: angle } }))}>{angle === 0 ? '↔' : '↕'} {angle}°</button>)}</div>
           <NumberField label="Eigener Winkel" value={room.layout.direction} min={-360} max={360} unit="°" onChange={direction => updateRoom(r => ({ ...r, layout: { ...r.layout, direction } }))} />
+          {room.layout.mode !== 'manual' && <div className={layout?.feasible ? 'auto-status' : 'auto-status blocked'}><Sparkles size={18} /><div><strong>{layout?.feasible ? 'Automatisch geplant' : 'Keine zulässige Verlegung gefunden'}</strong><p>Startstücke je Reihe werden so gewählt, dass alle Teilstücke mindestens {project.flooring.minEndPieceLength} mm lang sind und benachbarte Fugen mindestens {project.flooring.minJointOffset ?? 300} mm Abstand haben.</p></div></div>}
+          <details className="manual-controls"><summary>Manuell anpassen (Experten)</summary><label className="toggle-field"><input type="checkbox" checked={room.layout.mode === 'manual'} onChange={e => updateRoom(r => ({ ...r, layout: { ...r.layout, mode: e.target.checked ? 'manual' : 'automatic' } }))} />Manuelle Rasterplanung aktivieren</label>
+          {room.layout.mode === 'manual' && <>
           <label className="range-field"><span>Quer-Offset <b>{format(room.layout.offsetY)} mm</b></span><input aria-label="Quer-Offset" type="range" min="0" max={project.flooring.width - .1} step=".1" value={room.layout.offsetY}
             onChange={e => updateRoom(r => ({ ...r, layout: { ...r.layout, offsetY: Number(e.target.value) } }))} /></label>
           <p className="hint">Verschiebt die Reihen quer zur Dielenrichtung.</p>
           <NumberField label="Längs-Offset" value={room.layout.offsetX} max={project.flooring.length - .1} step={.1} onChange={offsetX => updateRoom(r => ({ ...r, layout: { ...r.layout, offsetX } }))} />
           <button className="primary full optimize-button" disabled={optimizing || !layout} onClick={optimize}><Sparkles size={16} />{optimizing ? 'Varianten werden geprüft …' : 'Quer-Offset optimieren'}</button>
-          <p className="hint">Sucht breite, möglichst ähnliche Randreihen und berücksichtigt schmale Bereiche sowie Verschnitt.</p></section>
+          <p className="hint">Hier sind die Mindestlängen nicht automatisch gelöst. Zur automatischen Planung die manuelle Rasterplanung ausschalten.</p></>}
+          </details></section>
           {computation.errors.has(room.id) && <div className="warning-card"><TriangleAlert size={18} /><p>{computation.errors.get(room.id)}</p></div>}
-          {layout && <><section className="edge-result"><h3>Deine Randreihen</h3><div className="edge-pair"><div className={layout.firstRowWidth < project.flooring.minRowWidth - .01 ? 'too-narrow' : ''}><span>Erste Reihe</span><strong>{format(layout.firstRowWidth)}<small>mm</small></strong></div>
+          {layout && <>{layout.feasible && <><section className="edge-result"><h3>Deine Randreihen</h3><div className="edge-pair"><div className={layout.firstRowWidth < project.flooring.minRowWidth - .01 ? 'too-narrow' : ''}><span>Erste Reihe</span><strong>{format(layout.firstRowWidth)}<small>mm</small></strong></div>
             <div className={layout.lastRowWidth < project.flooring.minRowWidth - .01 ? 'too-narrow' : ''}><span>Letzte Reihe</span><strong>{format(layout.lastRowWidth)}<small>mm</small></strong></div></div>
             <p><Check size={13} />Ziel: mindestens {project.flooring.minRowWidth} mm</p></section>
             <section className="quantities"><h3>Material im Überblick</h3><div className="area-number">{format(layout.coveredArea / 1e6, 2)}<small>m²</small><span>verlegte Fläche</span></div>
               <dl><div><dt>Raumfläche</dt><dd>{format(layout.roomArea / 1e6, 2)} m²</dd></div><div><dt>Ganze Dielen</dt><dd>{layout.fullBoards}</dd></div><div><dt>Dielen mit Zuschnitt</dt><dd>{layout.cutBoards}</dd></div>
                 <div className="total"><dt>Dielen insgesamt</dt><dd>{layout.boards.length}</dd></div><div><dt>Ausgangsmaterial</dt><dd>{format(layout.materialArea / 1e6, 2)} m²</dd></div><div><dt>Rechnerischer Verschnitt</dt><dd>{format(layout.wastePercent)} %</dd></div><div><dt>Abfallfläche</dt><dd>{format(layout.wasteArea / 1e6, 2)} m²</dd></div></dl>
-              <p className="hint">Eine neue Diele je Rasterposition. Ohne Wiederverwendung von Reststücken, Sägeblattbreite und Kaufreserve.</p></section>
+              <div className="package-result"><strong>{packages ? `${packages.packages} ${packages.packages === 1 ? 'Paket' : 'Pakete'} für diesen Raum` : 'Paketinhalt fehlt'}</strong>
+                {packages ? <p>{project.flooring.boardsPerPack} Dielen / Paket · {project.flooring.reservePercent ?? 5} % Zusatzreserve<br />{layout.boards.length} benötigte Dielen + {packages.reserveBoards} Reserve<br />Gekauft: {packages.purchasedBoards} Dielen · {format(packages.area, 2)} m²</p> : <p>Links „Dielen pro Paket“ eintragen.</p>}</div>
+              <p className="hint">Zuschnitte sind in der Dielenmenge enthalten. Zusätzlich kommt die gewählte Reserve hinzu. Reststücke werden noch nicht wiederverwendet; die Menge ist daher konservativ.</p></section></>}
             {layout.warnings.length > 0 && <div className="warning-card"><TriangleAlert size={18} /><div><strong>Diese Stellen prüfen</strong><ul>{layout.warnings.map(w => <li key={w}>{w}</li>)}</ul></div></div>}
             <details className="row-details"><summary>{layout.rows.length} Reihen im Detail</summary><table><thead><tr><th>Reihe</th><th>Breite</th><th>Start / Ende</th></tr></thead><tbody>{layout.rows.map(r => <tr key={r.index}><td>{r.index + 1}</td><td>{format(r.width, 0)} mm</td><td>{format(r.firstLength, 0)} / {format(r.lastLength, 0)}</td></tr>)}</tbody></table></details>
           </>}
-        </> : <div className="empty-results"><ScanLine size={32} /><p>Zeichne einen Raum auf dem Grundriss. Hier siehst du anschließend Verlegung, Randreihen und Materialmenge.</p></div>}
+        </> : <div className="empty-results"><ScanLine size={32} /><p>{room ? 'In diesem Raum ist Laminat ausgeschaltet. Die Raumkontur bleibt als Teil des Grundrisses erhalten und kann an andere Räume einrasten. Er wird nicht mit Dielen gefüllt und benötigt keine Pakete.' : 'Zeichne einen Raum auf dem Grundriss. Hier siehst du anschließend Verlegung, Randreihen und Materialmenge.'}</p></div>}
         <div className="coming-next"><small>ALS NÄCHSTES</small><p>Reststücke wiederverwenden<br />und einen Schnittplan erstellen.</p></div>
       </aside>
     </div>

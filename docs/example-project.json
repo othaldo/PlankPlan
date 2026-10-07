@@ -9,7 +9,10 @@
     "expansionGap": 10,
     "minRowWidth": 60,
     "minEndPieceLength": 300,
-    "jointOffset": 400
+    "jointOffset": 400,
+    "minJointOffset": 300,
+    "boardsPerPack": 10,
+    "reservePercent": 5
   },
   "floors": [
     {
@@ -21,8 +24,9 @@
         {
           "id": "living-room",
           "name": "Wohnzimmer",
+          "flooringEnabled": true,
           "polygon": [{"x":0,"y":0},{"x":5200,"y":0},{"x":5200,"y":4100},{"x":3800,"y":4100},{"x":3800,"y":4700},{"x":0,"y":4700}],
-          "layout": {"direction":0,"offsetX":0,"offsetY":0}
+          "layout": {"direction":0,"offsetX":0,"offsetY":0,"mode":"automatic"}
         }
       ]
     },
