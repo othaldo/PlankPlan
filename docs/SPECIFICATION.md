@@ -25,7 +25,8 @@ Default-Material: Parador Selected Eiche Luxemburg, 1285 × 194 × 8 mm. Verglei
 - Zwei-Punkte-Kalibrierung; vorhandene Konturen bleiben bei Neukalibrierung am Bild ausgerichtet.
 - Polygonraum zeichnen und schließen, konkave Räume unterstützen; ungültige Konturen abweisen.
 - Zeichnen mit Millimeter-Raster und optionalen 45°-Winkeln; letzten Punkt zurücknehmen und abbrechen.
-- Räume auswählen, umbenennen, duplizieren, löschen; bestehende Eckpunkte ziehen.
+- Räume auswählen, umbenennen, duplizieren, löschen; bestehende Eckpunkte ziehen. Plus-Griffe an allen Kanten einschließlich der Schlusskante fügen Punkte per Klick, Ziehen oder Tastatur ein. Ausgewählte Punkte per Button oder Entf löschen; mindestens drei Punkte erhalten. Ungültige Änderungen überschreiben die gültige Kontur nicht.
+- Shift beim Eckpunkte-Ziehen richtet die nächstliegende Nachbarkante exakt horizontal oder vertikal aus, mit sichtbarer Hilfslinie. Drücken/Loslassen wirkt sofort, auch ohne Mausbewegung; die Achsenausrichtung hat Vorrang vor dem Einrasten an anderen Räumen.
 - Laminat pro Raum ein-/ausschalten; ausgeschlossene Räume behalten ihre Geometrie und benötigen kein Material.
 - Ecken und Wandsegmente beim Zeichnen, Eckpunkte-Ziehen und Verschieben ganzer Räume einrasten lassen. Toleranz entspricht 10 Bildschirmpixeln bei jedem Zoom; vollständige Raumverschiebung verändert keine Maße.
 - Reale Dielenmaße eingeben, Vorlagen wechseln, Verlegerichtung 0°/90°/freier Winkel einstellen.
@@ -50,7 +51,7 @@ Default-Material: Parador Selected Eiche Luxemburg, 1285 × 194 × 8 mm. Verglei
 3. Exportierbarer Schnittplan und Dielen-/Reststückzuordnung. Sägeblattverlust und projektweite Material-/Reststückplanung. Packungsgrößen und Zusatzreserve je Raum sind bereits umgesetzt.
 4. Aussparungen für Kamin, Treppe, Einbauten und weitere Hindernisse.
 5. PDF-Grundrissimport, Hintergrund verschieben/drehen, Ausrichtung an längster Wand oder Fensterlicht.
-6. Punkte in bestehende Konturen einfügen/entfernen, direkte Drehgriffe, zusätzliche Maßbeschriftungen.
+6. Direkte Drehgriffe und zusätzliche Maßbeschriftungen. Einfügen/Entfernen zusätzlicher Eckpunkte und waagerechte/senkrechte Ausrichtung per Shift sind bereits umgesetzt.
 7. Durchgehendes gemeinsames Raster über mehrere Räume und Türöffnungen; Raumverbindungen im Modell ergänzen.
 
 ## Qualitätskriterien

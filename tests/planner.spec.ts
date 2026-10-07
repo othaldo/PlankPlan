@@ -69,6 +69,70 @@ test('snaps an entire room flush against an adjacent room wall without changing 
   expect(polygon[2].y - polygon[1].y).toBeCloseTo(3000);
   await page.screenshot({ path: 'test-results/plankplan-adjacent-rooms.png', fullPage: true });
 });
+test('inserts and drags room vertices, handles the closing edge and persists valid edits', async ({ page }) => {
+  await page.goto('/'); await page.getByRole('button', { name: 'Etage hinzufügen' }).click();
+  await page.getByRole('button', { name: 'Räume aus JSON einfügen' }).click();
+  await page.getByLabel('Raumdefinitionen als JSON').fill('{"rooms":[{"name":"Bearbeitbarer Raum","flooringEnabled":false,"polygon":[[0,0],[4000,0],[4000,3000],[0,3000]]}]}');
+  await page.getByRole('button', { name: 'Räume hinzufügen', exact: true }).click();
+  await page.getByRole('button', { name: 'Plan einpassen' }).click();
+  const svg = page.getByRole('img', { name: 'Interaktiver Verlegeplan' });
+  const vertices = svg.locator('.vertex');
+  const screenPoint = async (x: number, y: number) => svg.evaluate((node, p) => {
+    const q = new DOMPoint(p.x, p.y).matrixTransform((node as SVGSVGElement).getScreenCTM()!); return { x: q.x, y: q.y };
+  }, { x, y });
+  const storedPolygon = () => page.evaluate(() => JSON.parse(localStorage.getItem('plankplan.project.v1') ?? 'null')?.floors[1]?.rooms[0]?.polygon);
+  await page.getByRole('button', { name: 'Eckpunkt an Kante 1 einfügen', exact: true }).click();
+  await expect(vertices).toHaveCount(5);
+  await expect.poll(storedPolygon).toEqual([{ x: 0, y: 0 }, { x: 2000, y: 0 }, { x: 4000, y: 0 }, { x: 4000, y: 3000 }, { x: 0, y: 3000 }]);
+  let p = await screenPoint(2000, 500);
+  await vertices.nth(1).hover(); await page.mouse.down(); await page.mouse.move(p.x, p.y, { steps: 5 }); await page.mouse.up();
+  await expect.poll(async () => (await storedPolygon())[1]).toEqual({ x: 2000, y: 500 });
+  // The closing edge inserts at the end, preserving the original first vertex.
+  await page.getByRole('button', { name: 'Eckpunkt an Kante 5 einfügen', exact: true }).press('Enter');
+  await expect(vertices).toHaveCount(6);
+  await expect.poll(async () => (await storedPolygon())[5]).toEqual({ x: 0, y: 1500 });
+  p = await screenPoint(3000, 800);
+  await page.getByRole('button', { name: 'Eckpunkt an Kante 2 einfügen', exact: true }).hover();
+  await page.mouse.down(); await page.mouse.move(p.x, p.y, { steps: 5 }); await page.mouse.up();
+  await expect(vertices).toHaveCount(7);
+  await expect.poll(async () => (await storedPolygon())[2]).toEqual({ x: 3000, y: 800 });
+  const valid = await storedPolygon();
+  // Invalid moves cannot overwrite the last valid polygon.
+  p = await screenPoint(0, 3000);
+  await vertices.nth(2).hover(); await page.mouse.down(); await page.mouse.move(p.x, p.y, { steps: 5 }); await page.mouse.up();
+  await expect(page.getByRole('status')).toContainText('nicht selbst kreuzen');
+  expect(await storedPolygon()).toEqual(valid);
+  await page.reload(); await page.getByRole('button', { name: 'Obergeschoss 1', exact: true }).click(); await expect(vertices).toHaveCount(7);
+  expect(await storedPolygon()).toEqual(valid);
+  await page.screenshot({ path: 'test-results/plankplan-edit-room.png', fullPage: true });
+  await vertices.nth(6).click(); await page.getByRole('button', { name: 'Punkt löschen', exact: true }).click();
+  await expect(vertices).toHaveCount(6);
+  await vertices.nth(2).click(); await page.keyboard.press('Delete'); await expect(vertices).toHaveCount(5);
+  await vertices.nth(1).click(); await page.keyboard.press('Delete'); await expect(vertices).toHaveCount(4);
+  await vertices.nth(0).click(); await page.keyboard.press('Delete'); await expect(vertices).toHaveCount(3);
+  await vertices.nth(0).click(); await expect(page.getByRole('button', { name: 'Punkt löschen', exact: true })).toBeDisabled();
+  await page.keyboard.press('Delete'); await expect(vertices).toHaveCount(3);
+  await expect(page.getByRole('status')).toContainText('3 bis 512');
+  await expect.poll(async () => (await storedPolygon()).length).toBe(3);
+});
+test('uses Shift to straighten a dragged edge immediately and releases the constraint', async ({ page }) => {
+  await page.goto('/'); await page.getByRole('button', { name: 'Etage hinzufügen' }).click();
+  await page.getByRole('button', { name: 'Räume aus JSON einfügen' }).click();
+  await page.getByLabel('Raumdefinitionen als JSON').fill('{"rooms":[{"name":"Gerader Raum","flooringEnabled":false,"polygon":[[0,0],[4000,0],[4000,3000],[0,3000]]}]}');
+  await page.getByRole('button', { name: 'Räume hinzufügen', exact: true }).click();
+  await page.getByRole('button', { name: 'Plan einpassen' }).click();
+  const svg = page.getByRole('img', { name: 'Interaktiver Verlegeplan' }), vertex = svg.locator('.vertex').nth(1);
+  const p = await svg.evaluate(node => { const q = new DOMPoint(3900, 500).matrixTransform((node as SVGSVGElement).getScreenCTM()!); return { x: q.x, y: q.y }; });
+  await vertex.hover(); await page.mouse.down(); await page.mouse.move(p.x, p.y, { steps: 5 });
+  await expect(vertex).toHaveAttribute('cx', '3900'); await expect(vertex).toHaveAttribute('cy', '500');
+  await page.keyboard.down('Shift');
+  await expect(vertex).toHaveAttribute('cx', '4000'); await expect(vertex).toHaveAttribute('cy', '500');
+  await expect(page.getByTestId('axis-alignment')).toContainText('senkrecht');
+  await page.keyboard.up('Shift'); await expect(vertex).toHaveAttribute('cx', '3900');
+  await expect(page.getByTestId('axis-alignment')).toHaveCount(0);
+  await page.keyboard.down('Shift'); await page.mouse.up(); await page.keyboard.up('Shift');
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('plankplan.project.v1') ?? 'null')?.floors[1]?.rooms[0]?.polygon[1])).toEqual({ x: 4000, y: 500 });
+});
 test('loads an image, calibrates two points and traces a polygon in world coordinates', async ({ page }) => {
   await page.goto('/'); await page.getByRole('button', { name: 'Etage hinzufügen' }).click();
   // Browser canvas generates a known 800 x 600 plan without an external asset.

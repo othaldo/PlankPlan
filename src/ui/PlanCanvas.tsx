@@ -5,7 +5,7 @@ import { bounds, validatePolygon } from '../geometry/polygon';
 import type { Layout } from '../flooring/layout';
 import type { Floor, Point, Room } from '../model/types';
 import { Maximize, Minus, Plus } from 'lucide-react';
-import { snapRoomTranslation, snapToRooms } from '../geometry/snapping';
+import { alignVertex, snapRoomTranslation, snapToRooms } from '../geometry/snapping';
 
 export type Tool = 'select' | 'draw' | 'calibrate' | 'pan' | 'move-room';
 export function pathData(polygons: MultiPolygon) {
@@ -24,6 +24,10 @@ export function PlanCanvas({ floor, selectedId, layouts, tool, draft, setDraft, 
   const drag = useRef<{ kind: 'vertex' | 'pan' | 'room'; id?: string; index?: number; point: Point; initial?: Point[]; view?: typeof view; current?: Point[] } | null>(null);
   const [preview, setPreview] = useState<{ id: string; polygon: Point[] } | null>(null);
   const [snapTarget, setSnapTarget] = useState<Point | null>(null);
+  const lastVertexPointer = useRef<Point | null>(null);
+  const [alignment, setAlignment] = useState<{ anchor: Point; point: Point } | null>(null);
+  const [activeVertex, setActiveVertex] = useState<{ id: string; index: number } | null>(null);
+  useEffect(() => { setActiveVertex(null); setAlignment(null); }, [floor.id, selectedId, tool]);
   const scale = floor.calibration?.mmPerPixel ?? 5;
   function fit() {
     const points = floor.rooms.flatMap(r => r.polygon);
@@ -43,7 +47,7 @@ export function PlanCanvas({ floor, selectedId, layouts, tool, draft, setDraft, 
   function tolerance() { const m = svg.current?.getScreenCTM(); return m ? 10 / Math.hypot(m.a, m.b) : view.w / 80; }
   function snapped(p: Point, shift: boolean, excludeId?: string): Point {
     let result = { x: Math.round(p.x / snap) * snap, y: Math.round(p.y / snap) * snap };
-    if (shift && draft.length) {
+    if (shift && tool === 'draw' && draft.length) {
       const start = draft.at(-1)!; const length = Math.hypot(p.x - start.x, p.y - start.y);
       const angle = Math.round(Math.atan2(p.y - start.y, p.x - start.x) / (Math.PI / 4)) * Math.PI / 4;
       result = { x: start.x + length * Math.cos(angle), y: start.y + length * Math.sin(angle) };
@@ -77,8 +81,7 @@ export function PlanCanvas({ floor, selectedId, layouts, tool, draft, setDraft, 
       setView(v => ({ ...v, x: v.x + d.point.x - p.x, y: v.y + d.point.y - p.y }));
     }
     if (d?.kind === 'vertex' && d.initial && d.id !== undefined && d.index !== undefined) {
-      const polygon = d.initial.map((point, i) => i === d.index ? snapped(p, false, d.id) : point);
-      d.current = polygon; setPreview({ id: d.id, polygon });
+      updateVertex(p, e.shiftKey);
     }
     if (d?.kind === 'room' && d.initial && d.id) {
       const delta = { x: p.x - d.point.x, y: p.y - d.point.y };
@@ -86,12 +89,44 @@ export function PlanCanvas({ floor, selectedId, layouts, tool, draft, setDraft, 
       d.current = moved.polygon; setPreview({ id: d.id, polygon: moved.polygon }); setSnapTarget(moved.target);
     }
   }
+  function updateVertex(p: Point, shift: boolean) {
+    const d = drag.current;
+    if (d?.kind !== 'vertex' || !d.initial || d.id === undefined || d.index === undefined) return;
+    lastVertexPointer.current = p;
+    let point: Point;
+    if (shift) {
+      const aligned = alignVertex({ x: Math.round(p.x / snap) * snap, y: Math.round(p.y / snap) * snap }, d.initial, d.index);
+      point = aligned.point; setAlignment(aligned); setSnapTarget(null);
+    } else { point = snapped(p, false, d.id); setAlignment(null); }
+    const polygon = d.initial.map((initial, i) => i === d.index ? point : initial);
+    d.current = polygon; setPreview({ id: d.id, polygon });
+  }
+  useEffect(() => {
+    const shiftChanged = (event: KeyboardEvent) => {
+      if (event.key === 'Shift' && lastVertexPointer.current) updateVertex(lastVertexPointer.current, event.type === 'keydown');
+      if (event.type === 'keydown' && event.key === 'Delete' && activeVertex && tool === 'select' && !drag.current &&
+        !(event.target as HTMLElement).matches('input,textarea,select,[contenteditable="true"]')) {
+        event.preventDefault(); deleteVertex();
+      }
+      if (event.type === 'keydown' && event.key === 'Escape') setActiveVertex(null);
+    };
+    window.addEventListener('keydown', shiftChanged); window.addEventListener('keyup', shiftChanged);
+    return () => { window.removeEventListener('keydown', shiftChanged); window.removeEventListener('keyup', shiftChanged); };
+  }, [floor.rooms, tool, snap, snapRooms, activeVertex]);
+  function deleteVertex() {
+    const room = floor.rooms.find(r => r.id === activeVertex?.id);
+    if (!room || !activeVertex || room.id !== selectedId) return;
+    const polygon = room.polygon.filter((_, index) => index !== activeVertex.index);
+    const error = validatePolygon(polygon);
+    if (error) { onError(error); return; }
+    onPolygon(room.id, polygon); setActiveVertex(null);
+  }
   function release() {
     const d = drag.current;
     if ((d?.kind === 'vertex' || d?.kind === 'room') && d.id && d.current) {
       const error = validatePolygon(d.current); if (error) onError(error); else onPolygon(d.id, d.current);
     }
-    drag.current = null; setPreview(null); setSnapTarget(null);
+    drag.current = null; lastVertexPointer.current = null; setPreview(null); setSnapTarget(null); setAlignment(null);
   }
   function roomPointer(e: ReactPointerEvent<SVGElement>, room: Room) {
     if (tool !== 'select' && tool !== 'move-room') return;
@@ -101,6 +136,19 @@ export function PlanCanvas({ floor, selectedId, layouts, tool, draft, setDraft, 
       svg.current?.setPointerCapture(e.pointerId);
     }
   }
+  function insertVertex(room: Room, edge: number, point: Point, event?: ReactPointerEvent<SVGGElement>) {
+    const polygon = [...room.polygon.slice(0, edge + 1), point, ...room.polygon.slice(edge + 1)];
+    const error = validatePolygon(polygon);
+    if (error) { onError(error); return; }
+    setActiveVertex({ id: room.id, index: edge + 1 });
+    if (event) {
+      // Clicking commits the new point on release; dragging previews its new position.
+      drag.current = { kind: 'vertex', id: room.id, index: edge + 1, point, initial: polygon, current: polygon };
+      lastVertexPointer.current = point;
+      setPreview({ id: room.id, polygon });
+      svg.current?.setPointerCapture(event.pointerId);
+    } else onPolygon(room.id, polygon);
+  }
   function zoom(factor: number, center = { x: view.x + view.w / 2, y: view.y + view.h / 2 }) {
     if (view.w * factor < 100 || view.w * factor > 2e6) return;
     setView({ x: center.x - (center.x - view.x) * factor, y: center.y - (center.y - view.y) * factor, w: view.w * factor, h: view.h * factor });
@@ -109,7 +157,7 @@ export function PlanCanvas({ floor, selectedId, layouts, tool, draft, setDraft, 
   const labelSize = view.w / 75, gridSize = view.w > 16000 ? 1000 : 500;
   return <div className={`plan-canvas tool-${tool}`}>
     <svg ref={svg} role="img" aria-label="Interaktiver Verlegeplan" viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`}
-      onPointerDown={click} onPointerMove={move} onPointerUp={release} onPointerCancel={() => { drag.current = null; setPreview(null); }}
+      onPointerDown={click} onPointerMove={move} onPointerUp={release} onPointerCancel={() => { drag.current = null; lastVertexPointer.current = null; setPreview(null); setAlignment(null); setSnapTarget(null); }}
       onWheel={e => { e.preventDefault(); zoom(e.deltaY > 0 ? 1.12 : 0.88, coordinate(e.clientX, e.clientY)); }}>
       <defs><pattern id="grid" width={gridSize} height={gridSize} patternUnits="userSpaceOnUse"><path d={`M ${gridSize} 0 L 0 0 0 ${gridSize}`} fill="none" stroke="#dce1da" strokeWidth="1" vectorEffect="non-scaling-stroke" /></pattern></defs>
       <rect x={view.x - view.w} y={view.y - view.h} width={view.w * 3} height={view.h * 3} fill="url(#grid)" />
@@ -130,9 +178,25 @@ export function PlanCanvas({ floor, selectedId, layouts, tool, draft, setDraft, 
           <polygon points={pointsString(points)} fill="none" stroke={selected ? '#4b6546' : '#8b9588'} strokeDasharray={room.flooringEnabled === false ? '7 4' : undefined} strokeWidth={selected ? 2.5 : 1.5} vectorEffect="non-scaling-stroke" pointerEvents="none" />
           <text x={(b.minX + b.maxX) / 2} y={(b.minY + b.maxY) / 2} textAnchor="middle" fontSize={labelSize} className="room-label" pointerEvents="none">{room.name}</text>
           {room.flooringEnabled === false && <text x={(b.minX + b.maxX) / 2} y={(b.minY + b.maxY) / 2 + labelSize * 1.5} textAnchor="middle" fontSize={labelSize * .75} fill="#6a7780" pointerEvents="none">ohne Laminat</text>}
+          {selected && tool === 'select' && !preview && points.map((point, index) => {
+            const next = points[(index + 1) % points.length];
+            const midpoint = { x: (point.x + next.x) / 2, y: (point.y + next.y) / 2 }, radius = tolerance() * .8;
+            return <g key={`insert-${index}`} role="button" tabIndex={0} aria-label={`Eckpunkt an Kante ${index + 1} einfügen`}
+              className="insert-vertex" transform={`translate(${midpoint.x} ${midpoint.y})`}
+              onPointerDown={e => { if (e.button !== 0) return; e.stopPropagation(); insertVertex(room, index, midpoint, e); }}
+              onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); insertVertex(room, index, midpoint); } }}>
+              <title>Eckpunkt einfügen · klicken oder direkt ziehen</title>
+              <circle r={radius} fill="#f7faf3" stroke="#4b6546" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+              <path d={`M ${-radius * .45} 0 H ${radius * .45} M 0 ${-radius * .45} V ${radius * .45}`}
+                stroke="#4b6546" strokeWidth="1.5" vectorEffect="non-scaling-stroke" pointerEvents="none" />
+            </g>;
+          })}
           {selected && tool === 'select' && points.map((point, index) => <circle key={index} cx={point.x} cy={point.y} r={view.w / 330}
-            fill="white" stroke="#4b6546" strokeWidth="2" vectorEffect="non-scaling-stroke" className="vertex"
-            onPointerDown={e => { e.stopPropagation(); drag.current = { kind: 'vertex', id: room.id, index, point, initial: room.polygon };
+            fill={activeVertex?.id === room.id && activeVertex.index === index ? '#4b6546' : 'white'} stroke="#4b6546" strokeWidth="2" vectorEffect="non-scaling-stroke" className="vertex"
+            role="button" tabIndex={0} aria-label={`Eckpunkt ${index + 1}`} onFocus={() => setActiveVertex({ id: room.id, index })}
+            onContextMenu={e => { e.preventDefault(); setActiveVertex({ id: room.id, index }); }}
+            onPointerDown={e => { if (e.button !== 0) return; e.stopPropagation(); setActiveVertex({ id: room.id, index }); drag.current = { kind: 'vertex', id: room.id, index, point, initial: room.polygon };
+              lastVertexPointer.current = point;
               svg.current?.setPointerCapture(e.pointerId); }} />)}
         </g>;
       })}
@@ -148,7 +212,20 @@ export function PlanCanvas({ floor, selectedId, layouts, tool, draft, setDraft, 
       </g>}
       {snapTarget && <g pointerEvents="none"><circle cx={snapTarget.x} cy={snapTarget.y} r={view.w / 180} fill="none" stroke="#2c9979" strokeWidth="2" vectorEffect="non-scaling-stroke" />
         <text x={snapTarget.x + labelSize} y={snapTarget.y - labelSize / 2} fill="#26795f" fontSize={labelSize * .7}>eingerastet</text></g>}
+      {alignment && <g pointerEvents="none" data-testid="axis-alignment">
+        <line x1={alignment.anchor.x} y1={alignment.anchor.y} x2={alignment.point.x} y2={alignment.point.y}
+          stroke="#317d99" strokeWidth="2.5" strokeDasharray="6 3" vectorEffect="non-scaling-stroke" />
+        <text x={alignment.point.x + labelSize} y={alignment.point.y - labelSize / 2} fill="#317d99" fontSize={labelSize * .7}>
+          {alignment.anchor.y === alignment.point.y ? 'waagerecht' : 'senkrecht'} · Shift
+        </text>
+      </g>}
     </svg>
+    {activeVertex && activeVertex.id === selectedId && tool === 'select' && <div className="vertex-actions">
+      <span>Eckpunkt {activeVertex.index + 1}</span>
+      <button onClick={deleteVertex} disabled={(floor.rooms.find(r => r.id === selectedId)?.polygon.length ?? 0) <= 3}
+        title="Ausgewählten Eckpunkt entfernen (Entf)">Punkt löschen</button>
+      <button aria-label="Eckpunktauswahl aufheben" onClick={() => setActiveVertex(null)}>×</button>
+    </div>}
     <div className="canvas-scale"><span>{gridSize} mm Raster</span><span>Maße in Millimetern</span></div>
     <div className="zoom-controls"><button title="Verkleinern" onClick={() => zoom(1.2)}><Minus size={17} /></button>
       <button title="Vergrößern" onClick={() => zoom(.8)}><Plus size={17} /></button><button title="Plan einpassen" onClick={fit}><Maximize size={17} /></button></div>

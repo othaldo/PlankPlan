@@ -1,5 +1,14 @@
 import type { Point, Room } from '../model/types';
 const distance = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
+/** Keep the nearest adjacent edge exactly horizontal or vertical. */
+export function alignVertex(p: Point, polygon: Point[], index: number) {
+  const neighbors = [polygon[(index + polygon.length - 1) % polygon.length], polygon[(index + 1) % polygon.length]];
+  const choices = neighbors.flatMap(anchor => [
+    { anchor, point: { x: anchor.x, y: p.y }, distance: Math.abs(anchor.x - p.x) },
+    { anchor, point: { x: p.x, y: anchor.y }, distance: Math.abs(anchor.y - p.y) },
+  ]);
+  return choices.sort((a, b) => a.distance - b.distance)[0];
+}
 export function projectToSegment(p: Point, a: Point, b: Point): Point {
   const dx = b.x - a.x, dy = b.y - a.y, length2 = dx * dx + dy * dy;
   const t = length2 ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / length2)) : 0;

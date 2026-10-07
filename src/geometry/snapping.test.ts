@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { snapRoomTranslation, snapToRooms } from './snapping';
+import { alignVertex, snapRoomTranslation, snapToRooms } from './snapping';
 import { signedArea } from './polygon';
 import type { Room } from '../model/types';
 const room: Room = { id: 'existing', name: 'Existing', polygon: [{x:0,y:0},{x:4000,y:0},{x:4000,y:3000},{x:0,y:3000}], layout: { direction: 0, offsetX: 0, offsetY: 0 }, flooringEnabled: false };
 describe('room adjacency snapping', () => {
+  it('aligns a dragged vertex to the closest horizontal or vertical neighboring edge', () => {
+    expect(alignVertex({ x: 3800, y: 100 }, room.polygon, 1).point).toEqual({ x: 3800, y: 0 });
+    expect(alignVertex({ x: 3900, y: 500 }, room.polygon, 1).point).toEqual({ x: 4000, y: 500 });
+    expect(alignVertex({ x: -200, y: 500 }, room.polygon, 0).point).toEqual({ x: 0, y: 500 });
+  });
   it('snaps exactly to an existing corner including rooms without laminate', () => { expect(snapToRooms({ x: 3980, y: 3010 }, [room], 30)).toEqual({ x: 4000, y: 3000 }); });
   it('projects onto a wall without snapping to a distant endpoint', () => { expect(snapToRooms({ x: 3990, y: 1500 }, [room], 20)).toEqual({ x: 4000, y: 1500 }); });
   it('excludes the edited room and leaves distant points unchanged', () => {
