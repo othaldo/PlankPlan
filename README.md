@@ -47,6 +47,10 @@ Bis fünf Räume werden alle Raumreihenfolgen mit bestehenden Zuschnitten geprü
 
 ## Architektur
 
+Unter „Verlegemuster“ gibt es zusätzlich zum freien, materialsparenden Versatz einen regelmäßigen Halbversatz (Wiederholung alle zwei Reihen) und Drittelversatz (alle drei Reihen). Die Automatik sucht eine gemeinsame Startposition und erhält den exakten Versatz von einer halben bzw. einem Drittel der Dielenlänge über sämtliche Reihen, auch bei der projektweiten Paketoptimierung. Mindeststücklänge, tatsächlicher Fugenabstand und erste Reihenbreite bleiben verbindlich. Gibt es unter diesen Regeln keine geprüfte zulässige Lösung, wird ein Hinweis angezeigt und kein unregelmäßiges Ersatzmuster eingesetzt. Das gewählte Muster wird im JSON gespeichert; alte Projekte ohne Muster behalten den freien Versatz. Regelmäßige Muster können mehr Ausgangsdielen erfordern.
+
+„Zuschnitte farbig markieren“ unter dem Plan kann ausgeschaltet werden, um das Fugenbild mit einheitlicher Dielenfarbe zu beurteilen. Braun und Grün sind Planungshilfen für Zuschnitte und wiederverwendete Reststücke, keine tatsächlichen Farbunterschiede des Laminats. Diese Ansicht verändert weder Geometrie noch Materialbedarf.
+
 ```text
 src/model/       Versioniertes Projektmodell mit floors[] und Materialvorlagen
 src/geometry/    Polygonprüfung, Maßstab, Transformationen, innere Bewegungsfuge

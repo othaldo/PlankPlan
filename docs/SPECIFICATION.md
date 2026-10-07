@@ -36,6 +36,8 @@ Default-Material: Parador Selected Eiche Luxemburg, 1285 × 194 × 8 mm. Verglei
 - Bewegungsfuge geometrisch nach innen versetzen; Räume mit echten Dielen füllen und tatsächliche Zuschnittpolygone an Grenzen anzeigen.
 - Ganze und zugeschnittene Dielen unterscheiden; Dieleninformationen bei Hover.
 - Automatische Planung als Standard: Randreihen optimieren, individuelle Startstücke je Reihe bestimmen und den Mindest-Fugenabstand zwischen benachbarten Reihen einhalten.
+- Optionales `layout.pattern`: `optimized` (Standard), `half` oder `third`. Regelmäßige Muster suchen einen gemeinsamen Start und wiederholen die Fugenphasen nach zwei bzw. drei Reihen. Mindestlängen und tatsächliche Fugenabstände bleiben verbindlich; keine stille Lockerung oder Rückkehr zum freien Versatz. Paketoptimierung, Cache und Plan-Signatur berücksichtigen das Muster; JSON erhält es.
+- Zuschnitt-/Reststückfarben zum Beurteilen des Fugenbilds ausschalten, ohne Geometrie oder Materialzuordnung zu ändern.
 - Erste Reihe unabhängig von der Längsplanung festlegen: volle Dielenbreite oder eine eigene Breite. Die Automatik überschreibt diese Vorgabe nicht und plant Startstücke, Fugenversatz sowie Reststückverwendung weiter. Die Bewegungsfuge bleibt erhalten; eine dadurch zu schmale letzte Reihe wird angezeigt. Die Vorgabe gilt pro Raum und bleibt über JSON und Browserspeicher erhalten.
 - Jedes getrennte Zuschnittfragment muss mindestens die konfigurierte Mindeststücklänge besitzen. Gibt die Suche keine gültige Lösung her, werden keine ungültigen Dielen ausgegeben und keine Paketmenge behauptet.
 - Erste und letzte Reihenbreite sowie Start- und Endstücke aller Reihen auswerten.

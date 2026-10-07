@@ -2,7 +2,7 @@ import polygonClipping from 'polygon-clipping';
 import type { MultiPolygon } from 'polygon-clipping';
 import { area, bounds, EPS, mod, polygonPoints, rectangle } from '../geometry/polygon';
 import { allocateLayout, emptyLayout, fillPrepared, prepareRoom } from '../flooring/layout';
-import type { Layout } from '../flooring/layout';
+import type { Layout, PreparedRoom } from '../flooring/layout';
 import type { Flooring, Room } from '../model/types';
 import { optimizeTransverse } from './transverse';
 import { allocateMaterial, initialMaterial } from '../flooring/material';
@@ -44,6 +44,49 @@ function candidate(band: MultiPolygon, y: number, phase: number, row: number, f:
   if (requirements.length) { requirements[0].role = 'start'; requirements[requirements.length - 1].role = 'end'; }
   return usedCount ? { origin, phase, spans, joints, count: usedCount, first, last, cutCount, requirements } : null;
 }
+
+/** Search the common start phase, keeping every row in the selected repeating pattern. */
+function planRegular(room: Room, f: Flooring, prepared: PreparedRoom, offsetY: number, initial: MaterialState, context?: MaterialContext) {
+  const repeat = room.layout.pattern === 'half' ? 2 : 3, step = f.length / repeat;
+  const b = prepared.extent, originY = b.minY - offsetY, rows = Math.ceil((b.maxY - originY - 1e-7) / f.width);
+  if (rows * (Math.ceil((b.maxX - b.minX) / f.length) + 3) > 15000) throw new Error('Dieser Raum erzeugt mehr als 15.000 Dielen. Bitte kleinere Räume oder größere Dielen verwenden.');
+  const bands: { row: number; y: number; band: MultiPolygon }[] = [], phases = new Set<number>();
+  const add = (n: number) => phases.add(Math.round(mod(n, f.length) * 1e5) / 1e5);
+  for (let i = 0; i < 64; i++) add(b.minX + i * f.length / 64);
+  for (let row = 0; row < rows; row++) {
+    const y = originY + row * f.width;
+    const band = polygonClipping.intersection(prepared.local, rectangle(b.minX - 1, y, b.maxX - b.minX + 2, f.width));
+    if (area(band) < .001) continue;
+    bands.push({ row, y, band });
+    for (const poly of band) {
+      const span = bounds(polygonPoints([poly]));
+      for (const x of [span.minX, span.maxX, span.minX + f.minEndPieceLength, span.maxX - f.minEndPieceLength]) add(x - (row % repeat) * step);
+    }
+    for (const stock of initial.offcuts.slice(-32)) {
+      add((stock.edge === 'right' ? b.minX + stock.length : b.maxX - stock.length) - (row % repeat) * step);
+    }
+  }
+  // Bound unusual polygons without approximating the selected pattern itself.
+  const all = [...phases], samples = all.length <= 256 ? all : Array.from({ length: 256 }, (_, i) => all[Math.floor(i * (all.length - 1) / 255)]);
+  let best: { origins: Map<number, number>; boards: number; cuts: number; first: number } | undefined;
+  for (const phase of samples) {
+    let inventory = initial, previous: Candidate | undefined, previousRow = -2, cuts = 0, first = 0, valid = true;
+    const origins = new Map<number, number>();
+    for (const { row, y, band } of bands) {
+      const choice = candidate(band, y, mod(phase + (row % repeat) * step, f.length), row, f);
+      if (!choice || (previous && row === previousRow + 1 && !jointsCompatible(previous, choice, f.minJointOffset ?? 300))) { valid = false; break; }
+      inventory = allocateMaterial(choice.requirements, f, inventory, context);
+      origins.set(row, choice.origin); cuts += choice.cutCount; if (!previous) first = choice.first;
+      previous = choice; previousRow = row;
+    }
+    if (valid && (!best || inventory.newBoards < best.boards || (inventory.newBoards === best.boards && (cuts < best.cuts || (cuts === best.cuts && first > best.first)))))
+      best = { origins, boards: inventory.newBoards, cuts, first };
+  }
+  if (!best) return { layout: emptyLayout(room, [`${repeat === 2 ? 'Halbversatz' : 'Drittelversatz'}: Kein gültiges regelmäßiges Muster mit mindestens ${f.minEndPieceLength} mm Stücklänge und ${f.minJointOffset ?? 300} mm Fugenabstand gefunden. Anderes Muster, Richtung oder Regeln wählen.`]), inventory: initial };
+  const layout = fillPrepared(prepared, f, { ...room.layout, offsetY }, best.origins);
+  if (!layout.feasible) return { layout: emptyLayout(room, ['Das regelmäßige Muster enthält einen unzulässigen Zuschnitt. Bitte anderes Muster oder andere Regeln wählen.']), inventory: initial };
+  return allocateLayout(layout, f, initial, context);
+}
 /** Beam search over real per-row cuts with hard end-piece and adjacent-joint constraints. */
 export function layoutAutomatic(room: Room, f: Flooring): Layout {
   return planAutomatic(room, f).layout;
@@ -58,6 +101,7 @@ export function planAutomatic(room: Room, f: Flooring, initial: MaterialState = 
   const offsetY = firstWidth === undefined
     ? optimizeTransverse({ ...room, layout: { ...room.layout, mode: 'manual' } }, f).offsetY
     : firstWidth === 'full' ? 0 : f.width - Math.min(firstWidth, f.width);
+  if (room.layout.pattern === 'half' || room.layout.pattern === 'third') return planRegular(room, f, prepared, offsetY, initial, context);
   const b = prepared.extent, originY = b.minY - offsetY;
   const rows = Math.ceil((b.maxY - originY - 1e-7) / f.width);
   const minimumJoint = f.minJointOffset ?? 300;

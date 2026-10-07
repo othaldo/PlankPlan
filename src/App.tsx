@@ -57,6 +57,7 @@ function App() {
   const [snap, setSnap] = useState(10);
   const [snapRooms, setSnapRooms] = useState(true);
   const [showBoards, setShowBoards] = useState(true);
+  const [showCutColors, setShowCutColors] = useState(true);
   const [notice, setNotice] = useState(initial.error);
   const [saveState, setSaveState] = useState('Lokal gespeichert');
   const [roomsDialog, setRoomsDialog] = useState(false);
@@ -326,8 +327,9 @@ function App() {
         <PlanCanvas key={`${floor.id}:${canvasVersion}`} floor={floor} selectedId={roomId} layouts={computation.layouts} tool={tool} draft={draft} setDraft={setDraft}
           calibrationPoints={calibrationPoints} setCalibrationPoints={setCalibrationPoints} onSelect={setRoomId} onRoom={addRoom}
           onPolygon={(id, polygon) => updateFloor(f => ({ ...f, rooms: f.rooms.map(r => r.id === id ? { ...r, polygon } : r) }))}
-          onError={setNotice} snap={snap} snapRooms={snapRooms} showBoards={showBoards} />
-        <div className="canvas-footer"><div className="legend"><span><i className="legend-full" />Ganze Diele</span><span><i className="legend-cut" />Zuschnitt</span><span><i className="legend-reused" />Reststück</span></div>
+          onError={setNotice} snap={snap} snapRooms={snapRooms} showBoards={showBoards} showCutColors={showCutColors} />
+        <div className="canvas-footer">{showCutColors ? <div className="legend"><span><i className="legend-full" />Ganze Diele</span><span><i className="legend-cut" />Zuschnitt</span><span><i className="legend-reused" />Reststück</span></div> : <div className="legend"><span>Fugenbild ohne Zuschnittfarben</span></div>}
+          <label><input type="checkbox" checked={showCutColors} onChange={e => setShowCutColors(e.target.checked)} />Zuschnitte farbig markieren</label>
           <label><input type="checkbox" checked={showBoards} onChange={e => setShowBoards(e.target.checked)} />Dielen anzeigen</label></div>
         <div className="plan-note"><Ruler size={19} /><p><strong>Jede Diele hat ihr echtes Maß.</strong> Der Plan zeigt die verbleibende Geometrie nach dem Zuschnitt. Die Bewegungsfuge bleibt an der Raumkontur frei.</p></div>
       </main>
@@ -335,6 +337,13 @@ function App() {
         {room && room.flooringEnabled !== false ? <><section className="layout-controls"><h3>Richtung & Planung</h3><div className="direction-buttons">{[0, 90].map(angle => <button className={room.layout.direction === angle ? 'active' : ''} key={angle} onClick={() => updateRoom(r => ({ ...r, layout: { ...r.layout, direction: angle } }))}>{angle === 0 ? '↔' : '↕'} {angle}°</button>)}</div>
           <NumberField label="Eigener Winkel" value={room.layout.direction} min={-360} max={360} unit="°" onChange={direction => updateRoom(r => ({ ...r, layout: { ...r.layout, direction } }))} />
           {room.layout.mode !== 'manual' && <>
+            <label className="field"><span>Verlegemuster</span><select aria-label="Verlegemuster" value={room.layout.pattern ?? 'optimized'}
+              onChange={e => updateRoom(r => ({ ...r, layout: { ...r.layout, pattern: e.target.value as 'optimized' | 'half' | 'third' } }))}>
+              <option value="optimized">Material sparen · freier Versatz</option><option value="half">Regelmäßig · Halbversatz</option><option value="third">Regelmäßig · Drittelversatz</option>
+            </select></label>
+            <p className="hint">{room.layout.pattern === 'half' || room.layout.pattern === 'third'
+              ? `Die Fugen wiederholen sich alle ${room.layout.pattern === 'half' ? 'zwei' : 'drei'} Reihen. Die Automatik sucht einen passenden Start. Das feste Muster bleibt auch bei der Paketoptimierung erhalten und kann mehr Material benötigen.`
+              : 'Die Suche bevorzugt weniger neue Dielen. Reststücke können zu unterschiedlichen Startlängen führen.'}</p>
             <label className="field"><span>Erste Reihe</span><select aria-label="Erste Reihe" value={room.layout.firstRowWidth === undefined ? 'automatic' : room.layout.firstRowWidth === 'full' ? 'full' : 'custom'}
               onChange={e => { const choice = e.target.value; updateRoom(r => ({ ...r, layout: { ...r.layout,
                 firstRowWidth: choice === 'automatic' ? undefined : choice === 'full' ? 'full' : Math.min(project.flooring.width, Math.max(.1, layout?.firstRowWidth || project.flooring.width)) } })); }}>

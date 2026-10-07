@@ -14,11 +14,11 @@ export function pathData(polygons: MultiPolygon) {
 }
 const pointsString = (points: Point[]) => points.map(p => `${p.x},${p.y}`).join(' ');
 export function PlanCanvas({ floor, selectedId, layouts, tool, draft, setDraft, calibrationPoints, setCalibrationPoints,
-  onSelect, onRoom, onPolygon, onError, snap, snapRooms, showBoards }:
+  onSelect, onRoom, onPolygon, onError, snap, snapRooms, showBoards, showCutColors = true }:
   { floor: Floor; selectedId: string | null; layouts: Map<string, Layout>; tool: Tool;
     draft: Point[]; setDraft: (p: Point[]) => void; calibrationPoints: Point[]; setCalibrationPoints: (p: Point[]) => void;
     onSelect: (id: string) => void; onRoom: (polygon: Point[]) => void; onPolygon: (id: string, polygon: Point[]) => void;
-    onError: (message: string) => void; snap: number; snapRooms: boolean; showBoards: boolean }) {
+    onError: (message: string) => void; snap: number; snapRooms: boolean; showBoards: boolean; showCutColors?: boolean }) {
   const svg = useRef<SVGSVGElement>(null);
   const canvas = useRef<HTMLDivElement>(null);
   const [canvasSize, setCanvasSize] = useState({ width: 800, height: 600 });
@@ -198,8 +198,8 @@ export function PlanCanvas({ floor, selectedId, layouts, tool, draft, setDraft, 
           <polygon points={pointsString(points)} fill={room.flooringEnabled === false ? 'rgba(167,177,183,.22)' : layout?.feasible === false ? 'rgba(189,97,59,.12)' : 'rgba(233,238,226,.4)'} stroke="none"
             onPointerDown={e => roomPointer(e, room)} />
           {showBoards && !(preview?.id === room.id) && layout?.boards.map(board => <path key={board.id} d={pathData(board.polygon)} fillRule="evenodd"
-            fill={board.material?.reusedFrom ? '#bdd2ac' : board.cut ? (board.row % 2 ? '#d5ad76' : '#dfbc88') : (board.row % 2 ? '#eee0c5' : '#e6d3af')}
-            stroke={board.material?.reusedFrom ? '#5f8650' : board.cut ? '#a47940' : '#b6a082'} strokeWidth="0.7" vectorEffect="non-scaling-stroke"
+            fill={!showCutColors ? '#e6d3af' : board.material?.reusedFrom ? '#bdd2ac' : board.cut ? (board.row % 2 ? '#d5ad76' : '#dfbc88') : (board.row % 2 ? '#eee0c5' : '#e6d3af')}
+            stroke={!showCutColors ? '#b6a082' : board.material?.reusedFrom ? '#5f8650' : board.cut ? '#a47940' : '#b6a082'} strokeWidth="0.7" vectorEffect="non-scaling-stroke"
             onPointerDown={e => roomPointer(e, room)}>
             <title>{`${room.name} · Reihe ${board.row + 1} · Diele ${board.column + 1}\n${board.cut ? 'Zuschnitt' : 'Ganze Diele'}: ${board.usedLength.toFixed(1)} × ${board.usedWidth.toFixed(1)} mm\nAusgangsdiele: ${board.material?.sourceBoardId ?? 'neu'} · ${board.source.length} × ${board.source.width} mm${board.material?.reusedFromPlacementId ? `\n${materialSource(board.material)}: ${board.material.stockLength.toFixed(1)} mm · ungedreht` : ''}`}</title>
           </path>)}

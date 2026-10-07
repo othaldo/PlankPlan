@@ -1,4 +1,38 @@
 import { expect, test } from '@playwright/test';
+test('chooses repeating patterns, keeps them during package optimization and previews without cut colors', async ({ page }) => {
+  await page.goto('/');
+  const project = { version:1, name:'Regelmäßiges Fugenbild', flooring:{name:'Test',length:1285,width:194,thickness:8,expansionGap:10,minRowWidth:60,minEndPieceLength:100,jointOffset:400,minJointOffset:400,boardsPerPack:10,reservePercent:0},
+    floors:[{id:'floor',name:'Erdgeschoss',background:null,calibration:null,rooms:[{id:'room',name:'Mustervergleich',polygon:[{x:0,y:0},{x:4010,y:0},{x:4010,y:2348},{x:0,y:2348}],layout:{direction:0,offsetX:0,offsetY:0,firstRowWidth:'full'}}]}] };
+  const input = page.locator('input[type=file][accept=".json,application/json"]');
+  await input.setInputFiles({name:'muster.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(project))});
+  await expect(page.getByRole('heading',{name:'Mustervergleich',exact:true})).toBeVisible();
+  await expect(page.getByLabel('Verlegemuster')).toHaveValue('optimized');
+  await page.getByLabel('Verlegemuster').selectOption('half');
+  await expect(page.getByText('Automatisch geplant',{exact:true})).toBeVisible();
+  const paths = page.locator('svg path > title'), colored = await paths.locator('..').evaluateAll(nodes => nodes.map(n => n.getAttribute('fill')));
+  expect(new Set(colored).size).toBeGreaterThan(1);
+  const geometry = await paths.locator('..').evaluateAll(nodes => nodes.map(n => n.getAttribute('d')));
+  const count = await page.getByTestId('new-boards').textContent();
+  await page.getByLabel('Zuschnitte farbig markieren').uncheck();
+  expect(new Set(await paths.locator('..').evaluateAll(nodes => nodes.map(n => n.getAttribute('fill')))).size).toBe(1);
+  expect(await paths.locator('..').evaluateAll(nodes => nodes.map(n => n.getAttribute('d')))).toEqual(geometry);
+  await expect(page.getByTestId('new-boards')).toHaveText(count!);
+  await page.getByLabel('Verlegemuster').selectOption('third'); await expect(page.getByText('Automatisch geplant',{exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Pakete optimieren',exact:true}).click();
+  await expect(page.locator('.notice')).toContainText('Beste gefundene Planung',{timeout:30000});
+  await expect(page.getByLabel('Verlegemuster')).toHaveValue('third');
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('plankplan.project.v1') ?? 'null')?.floors[0].rooms[0].layout.pattern)).toBe('third');
+  const downloading = page.waitForEvent('download'); await page.getByRole('button',{name:'JSON speichern',exact:true}).click();
+  await input.setInputFiles((await (await downloading).path())!); await expect(page.getByRole('status')).toContainText('Projekt einschließlich');
+  await expect(page.getByLabel('Verlegemuster')).toHaveValue('third');
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('plankplan.project.v1') ?? 'null')?.floors[0].rooms[0].layout.pattern)).toBe('third');
+  await page.reload(); await expect(page.getByLabel('Verlegemuster')).toHaveValue('third');
+  await page.getByLabel('Zuschnitte farbig markieren').uncheck();
+  await page.screenshot({path:'test-results/plankplan-third-pattern.png',fullPage:true});
+  await page.getByLabel('Verlegemuster').selectOption('half');
+  await page.screenshot({path:'test-results/plankplan-half-pattern.png',fullPage:true});
+});
+
 test('keeps wheel zoom inside the canvas, including controls and zoom limits, while the rest of the page scrolls', async ({ page }) => {
   const errors: string[] = [];
   page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });

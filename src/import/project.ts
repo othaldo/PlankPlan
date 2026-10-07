@@ -11,7 +11,7 @@ const id = z.string().min(1).max(120);
 const polygon = z.array(point).min(3).max(512).superRefine((points, ctx) => {
   const error = validatePolygon(points); if (error) ctx.addIssue({ code: 'custom', message: error });
 });
-const layout = z.object({ direction: finite.min(-360).max(360), offsetX: finite.min(-1e6).max(1e6), offsetY: finite.min(-1e6).max(1e6), mode: z.enum(['automatic', 'manual']).optional(), firstRowWidth: z.union([finite.min(.1).max(1000), z.literal('full')]).optional() });
+const layout = z.object({ direction: finite.min(-360).max(360), offsetX: finite.min(-1e6).max(1e6), offsetY: finite.min(-1e6).max(1e6), mode: z.enum(['automatic', 'manual']).optional(), firstRowWidth: z.union([finite.min(.1).max(1000), z.literal('full')]).optional(), pattern: z.enum(['optimized', 'half', 'third']).optional() });
 const room = z.object({ id, name, polygon, layout, flooringEnabled: z.boolean().optional() });
 const flooring = z.object({ name, length: finite, width: finite, thickness: finite,
   expansionGap: finite, minRowWidth: finite, minEndPieceLength: finite, jointOffset: finite,
