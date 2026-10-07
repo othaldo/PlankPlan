@@ -52,6 +52,30 @@ test('automatically corrects short end pieces, shows packs and excludes disabled
   await expect(page.getByText('Automatisch geplant', { exact: true })).toBeVisible();
   await page.screenshot({ path: 'test-results/plankplan-automatic.png', fullPage: true });
 });
+test('fixes the first row width while keeping automatic laying and remembers the preference', async ({ page }) => {
+  await page.goto('/'); await page.getByRole('button', { name: 'Etage hinzufügen' }).click();
+  await page.getByRole('button', { name: 'Räume aus JSON einfügen' }).click();
+  await page.getByLabel('Raumdefinitionen als JSON').fill('{"rooms":[{"name":"Randreihen-Test","polygon":[[0,0],[5200,0],[5200,2138],[0,2138]]}]}');
+  await page.getByRole('button', { name: 'Räume hinzufügen', exact: true }).click();
+  const first = page.locator('.edge-pair > div').nth(0).locator('strong'), last = page.locator('.edge-pair > div').nth(1).locator('strong');
+  await expect(first).toHaveText('186,0mm');
+  await page.getByLabel('Erste Reihe', { exact: true }).selectOption('full');
+  await expect(first).toHaveText('194,0mm'); await expect(last).toHaveText('178,0mm');
+  await expect(page.getByText('Automatisch geplant', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Manuelle Rasterplanung aktivieren')).not.toBeChecked();
+  for (const title of await page.locator('svg path > title').allTextContents())
+    expect(Number(title.match(/(?:Zuschnitt|Ganze Diele): ([\d.]+)/)?.[1])).toBeGreaterThanOrEqual(299.99);
+  await page.getByLabel('Erste Reihe', { exact: true }).selectOption('custom');
+  await page.getByLabel('Breite der ersten Reihe').fill('180'); await page.getByLabel('Breite der ersten Reihe').press('Enter');
+  await expect(first).toHaveText('180,0mm'); await expect(last).toHaveText('192,0mm');
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('plankplan.project.v1') ?? 'null')?.floors[1]?.rooms[0]?.layout.firstRowWidth)).toBe(180);
+  await page.reload(); await page.getByRole('button', { name: 'Obergeschoss 1', exact: true }).click();
+  await expect(page.getByLabel('Erste Reihe', { exact: true })).toHaveValue('custom');
+  await expect(page.getByLabel('Breite der ersten Reihe')).toHaveValue('180'); await expect(first).toHaveText('180,0mm');
+  await page.getByLabel('Erste Reihe', { exact: true }).selectOption('automatic'); await expect(first).toHaveText('186,0mm');
+  await page.getByLabel('Erste Reihe', { exact: true }).selectOption('full');
+  await page.screenshot({ path: 'test-results/plankplan-full-first-row.png', fullPage: true });
+});
 test('snaps an entire room flush against an adjacent room wall without changing its size', async ({ page }) => {
   await page.goto('/'); await page.getByRole('button', { name: 'Etage hinzufügen' }).click();
   await page.getByRole('button', { name: 'Räume aus JSON einfügen' }).click();

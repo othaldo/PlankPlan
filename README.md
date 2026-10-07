@@ -29,6 +29,8 @@ Unter Windows geht es auch per Doppelklick auf **Start-PlankPlan.cmd**. Das star
 
 Ein neuer Start enthält ein L-förmiges Beispielwohnzimmer. Das Beispiel lässt sich löschen oder auf einer neuen Etage durch einen eigenen Grundriss ergänzen. Materialparameter gelten projektweit; Richtung und Offsets sind je Raum unabhängig.
 
+Unter „Erste Reihe“ lässt sich volle Dielenbreite wählen oder eine eigene Breite festlegen. Die erste Breite bleibt dann fest; Startstücke, Fugenversatz und Reststücke werden weiterhin automatisch geplant. Die letzte Reihe nimmt die verbleibende Breite auf; unterschreitet sie die Mindestbreite, erscheint ein Hinweis. „Breite automatisch planen“ stellt die automatische Randreihenoptimierung wieder her. Die Breite wird ab der inneren Raumkante nach Abzug der Bewegungsfuge gemessen; bei schrägen Wänden oder Nischen bleiben lokale Konturzuschnitte notwendig.
+
 Unter dem Raumnamen kann „Laminat in diesem Raum verlegen“ ausgeschaltet werden, beispielsweise für Bad oder Küche. Solche Räume behalten ihre Geometrie, bleiben auswählbar und können an andere Räume einrasten; sie benötigen keine Dielen oder Pakete.
 
 Die Paketanzeige berechnet die benötigten Ausgangsdielen einschließlich realer Zuschnitte, addiert die gewählte Zusatzreserve und rundet auf vollständige Pakete auf. Für Parador Eiche Luxemburg sind 10 Dielen pro Paket voreingestellt, entsprechend den [Produktdaten von Raumtrend Hinze](https://www.raumtrend-hinze.de/laminat/parador-selected-laminat-eiche-luxemburg-1747215). Bei Wunderwerk oder eigenen Formaten bitte den Paketinhalt selbst eintragen. Der Paketinhalt ist editierbar; bei alten Luxemburg-Projekten wird die bekannte Vorlage beim Laden ergänzt.

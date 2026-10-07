@@ -80,7 +80,7 @@ export function fillPrepared(prepared: PreparedRoom, f: Flooring, settings: Layo
   const wasteArea = Math.max(0, materialArea - coveredArea);
   const firstRowWidth = rows[0]?.width ?? 0, lastRowWidth = rows.at(-1)?.width ?? 0;
   const warnings: string[] = [];
-  if (firstRowWidth < f.minRowWidth - EPS || lastRowWidth < f.minRowWidth - EPS) warnings.push(`Randreihe unter ${f.minRowWidth} mm. Quer-Offset optimieren.`);
+  if (firstRowWidth < f.minRowWidth - EPS || lastRowWidth < f.minRowWidth - EPS) warnings.push(`Randreihe unter ${f.minRowWidth} mm. ${settings.mode !== 'manual' && settings.firstRowWidth !== undefined ? 'Erste Reihe ändern oder ihre Breite automatisch planen lassen.' : 'Quer-Offset optimieren.'}`);
   const narrow = rows.filter(row => row.fragmentWidths.some(w => w < f.minRowWidth - EPS)).length;
   if (narrow) warnings.push(`${narrow} Reihen mit schmalen Bereichen, z. B. an Nischen oder schrägen Wänden.`);
   const short = boards.flatMap(board => board.pieceLengths).filter(length => length < f.minEndPieceLength - EPS).length;
@@ -122,7 +122,7 @@ const autoCache = new Map<string, Layout>();
 export function layoutRoom(room: Room, flooring: Flooring): Layout {
   if (room.flooringEnabled === false) return emptyLayout(room);
   if (room.layout.mode === 'manual') return fillPrepared(prepareRoom(room, flooring), flooring, room.layout);
-  const key = JSON.stringify([room.polygon, room.layout.direction, flooring]);
+  const key = JSON.stringify([room.polygon, room.layout.direction, room.layout.firstRowWidth, flooring]);
   const cached = autoCache.get(key); if (cached) return cached;
   const result = layoutAutomatic(room, flooring);
   if (autoCache.size >= 40) autoCache.delete(autoCache.keys().next().value!);

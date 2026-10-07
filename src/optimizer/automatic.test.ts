@@ -25,6 +25,35 @@ function assertPlan(r: Room) {
   return plan;
 }
 describe('automatic physical laying plan', () => {
+  it('can start at full width instead of cutting two almost full edge rows', () => {
+    const r = room(5200, 194 * 10 + 178 + 20);
+    const balanced = assertPlan(r);
+    expect(balanced.firstRowWidth).toBeCloseTo(186, 1); expect(balanced.lastRowWidth).toBeCloseTo(186, 1);
+    const full = assertPlan({ ...r, layout: { ...r.layout, firstRowWidth: 'full' } });
+    expect(full.resolvedOffsetY).toBe(0); expect(full.firstRowWidth).toBe(194); expect(full.lastRowWidth).toBeCloseTo(178, 2);
+    expect(full.boards.filter(b => b.row === 0).every(b => b.usedWidth === 194 && b.source.y === 10)).toBe(true);
+    expect(full.reusedPieces).toBeGreaterThan(0);
+    expect(assertPlan(r).firstRowWidth).toBeCloseTo(186, 1);
+  });
+  it('honors a custom first width without turning off length and joint planning', () => {
+    const r = room(5200, 194 * 10 + 178 + 20); r.layout.firstRowWidth = 180;
+    const plan = assertPlan(r);
+    expect(plan.firstRowWidth).toBeCloseTo(180, 2); expect(plan.lastRowWidth).toBeCloseTo(192, 2);
+    expect(plan.resolvedOffsetY).toBe(14);
+  });
+  it('preserves a full first row and warns when that makes the last row too narrow', () => {
+    const r = room(5200, 194 * 10 + 27 + 20); r.layout.firstRowWidth = 'full';
+    const plan = assertPlan(r);
+    expect(plan.firstRowWidth).toBe(194); expect(plan.lastRowWidth).toBeCloseTo(27, 2);
+    expect(plan.warnings).toContainEqual(expect.stringContaining('Erste Reihe ändern'));
+  });
+  it('uses the active plank width for a full first row after changing materials or direction', () => {
+    const r = room(5200, 2138); r.layout.firstRowWidth = 'full';
+    expect(layoutRoom(r, PRESETS[1]).firstRowWidth).toBeCloseTo(246, 2);
+    r.layout.direction = 90; expect(assertPlan(r).firstRowWidth).toBeCloseTo(194, 2);
+    r.layout.firstRowWidth = 246; expect(assertPlan(r).firstRowWidth).toBeCloseTo(194, 2);
+    r.layout.firstRowWidth = 0; expect(() => layoutRoom(r, flooring)).toThrow(/ersten Reihe/);
+  });
   it('corrects a 100 mm final piece by shortening the start, without manual offsets', () => {
     const r = room(1285 * 4 + 100 + 20);
     const manual = layoutRoom({ ...r, layout: { ...r.layout, mode: 'manual' } }, { ...flooring, jointOffset: 0 });

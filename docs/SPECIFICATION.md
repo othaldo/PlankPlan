@@ -12,7 +12,7 @@ Lokale React/TypeScript/Vite-Web-App für eine praktische Laminat-Verlegeplanung
 - Jede Etage: `id`, `name`, `background`, `calibration`, `rooms[]`.
 - Hintergrund: eingebettetes Bild, Originalabmessungen in Pixeln, Deckkraft, Ursprung in Millimetern.
 - Kalibrierung: zwei Bildpixel-Punkte, reale Strecke in Millimetern, daraus berechnete Millimeter pro Pixel.
-- Raum: `id`, `name`, einfaches polygonales Raumprofil, `flooringEnabled` zum Ausschließen aus der Laminatplanung, `layout` mit Richtung, Offsets und optionalem Modus `automatic`/`manual`. Fehlender Modus bedeutet automatisch.
+- Raum: `id`, `name`, einfaches polygonales Raumprofil, `flooringEnabled` zum Ausschließen aus der Laminatplanung, `layout` mit Richtung, Offsets und optionalem Modus `automatic`/`manual`. Fehlender Modus bedeutet automatisch. Optionales `layout.firstRowWidth`: fehlend für automatische Randreihen, `"full"` für volle Dielenbreite oder eine gewünschte Breite in Millimetern (maximal aktuelle Dielenbreite).
 - Zusätzliche Materialwerte: `minJointOffset`, `boardsPerPack`, `reservePercent`, `sawKerf`. Alte Projektdateien bleiben ladbar.
 - Dielenberechnung: Reihen- und Spaltenindex, Ausgangsrechteck mit Rotation, verbleibendes Zuschnitt-Multipolygon, belegte Fläche, ganze/geschnittene Diele und benötigte Abmessungen.
 
@@ -33,6 +33,7 @@ Default-Material: Parador Selected Eiche Luxemburg, 1285 × 194 × 8 mm. Verglei
 - Bewegungsfuge geometrisch nach innen versetzen; Räume mit echten Dielen füllen und tatsächliche Zuschnittpolygone an Grenzen anzeigen.
 - Ganze und zugeschnittene Dielen unterscheiden; Dieleninformationen bei Hover.
 - Automatische Planung als Standard: Randreihen optimieren, individuelle Startstücke je Reihe bestimmen und den Mindest-Fugenabstand zwischen benachbarten Reihen einhalten.
+- Erste Reihe unabhängig von der Längsplanung festlegen: volle Dielenbreite oder eine eigene Breite. Die Automatik überschreibt diese Vorgabe nicht und plant Startstücke, Fugenversatz sowie Reststückverwendung weiter. Die Bewegungsfuge bleibt erhalten; eine dadurch zu schmale letzte Reihe wird angezeigt. Die Vorgabe gilt pro Raum und bleibt über JSON und Browserspeicher erhalten.
 - Jedes getrennte Zuschnittfragment muss mindestens die konfigurierte Mindeststücklänge besitzen. Gibt die Suche keine gültige Lösung her, werden keine ungültigen Dielen ausgegeben und keine Paketmenge behauptet.
 - Erste und letzte Reihenbreite sowie Start- und Endstücke aller Reihen auswerten.
 - Manuelle Quer-/Längs-Rasterkontrolle als expliziter Expertenmodus erhalten.

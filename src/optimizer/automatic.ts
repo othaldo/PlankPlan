@@ -47,8 +47,14 @@ function candidate(band: MultiPolygon, y: number, phase: number, row: number, f:
 /** Beam search over real per-row cuts with hard end-piece and adjacent-joint constraints. */
 export function layoutAutomatic(room: Room, f: Flooring): Layout {
   const prepared = prepareRoom(room, f);
-  const transverse = optimizeTransverse({ ...room, layout: { ...room.layout, mode: 'manual' } }, f);
-  const offsetY = transverse.offsetY, b = prepared.extent, originY = b.minY - offsetY;
+  const firstWidth = room.layout.firstRowWidth;
+  if (typeof firstWidth === 'number' && (!Number.isFinite(firstWidth) || firstWidth < .1 || firstWidth > 1000))
+    throw new Error('Die Breite der ersten Reihe muss zwischen 0,1 und 1000 mm liegen.');
+  // Fix only the transverse origin; longitudinal cuts, joints and offcuts stay automatic.
+  const offsetY = firstWidth === undefined
+    ? optimizeTransverse({ ...room, layout: { ...room.layout, mode: 'manual' } }, f).offsetY
+    : firstWidth === 'full' ? 0 : f.width - Math.min(firstWidth, f.width);
+  const b = prepared.extent, originY = b.minY - offsetY;
   const rows = Math.ceil((b.maxY - originY - 1e-7) / f.width);
   const minimumJoint = f.minJointOffset ?? 300;
   let states: State[] = [];

@@ -263,6 +263,18 @@ function App() {
       <aside className="results-panel"><span className="eyebrow">VERLEGUNG & ERGEBNIS</span><h2>{room?.name ?? 'Raum auswählen'}</h2>
         {room && room.flooringEnabled !== false ? <><section className="layout-controls"><h3>Richtung & Planung</h3><div className="direction-buttons">{[0, 90].map(angle => <button className={room.layout.direction === angle ? 'active' : ''} key={angle} onClick={() => updateRoom(r => ({ ...r, layout: { ...r.layout, direction: angle } }))}>{angle === 0 ? '↔' : '↕'} {angle}°</button>)}</div>
           <NumberField label="Eigener Winkel" value={room.layout.direction} min={-360} max={360} unit="°" onChange={direction => updateRoom(r => ({ ...r, layout: { ...r.layout, direction } }))} />
+          {room.layout.mode !== 'manual' && <>
+            <label className="field"><span>Erste Reihe</span><select aria-label="Erste Reihe" value={room.layout.firstRowWidth === undefined ? 'automatic' : room.layout.firstRowWidth === 'full' ? 'full' : 'custom'}
+              onChange={e => { const choice = e.target.value; updateRoom(r => ({ ...r, layout: { ...r.layout,
+                firstRowWidth: choice === 'automatic' ? undefined : choice === 'full' ? 'full' : Math.min(project.flooring.width, Math.max(.1, layout?.firstRowWidth || project.flooring.width)) } })); }}>
+              <option value="automatic">Breite automatisch planen</option>
+              <option value="full">Volle Dielenbreite ({project.flooring.width} mm)</option>
+              <option value="custom">Breite selbst festlegen</option>
+            </select></label>
+            {typeof room.layout.firstRowWidth === 'number' && <NumberField label="Breite der ersten Reihe" value={Math.min(room.layout.firstRowWidth, project.flooring.width)} min={.1} max={project.flooring.width} step={.1}
+              onChange={firstRowWidth => updateRoom(r => ({ ...r, layout: { ...r.layout, firstRowWidth } }))} />}
+            <p className="hint">{room.layout.firstRowWidth === undefined ? 'Die Automatik verteilt die Breite auf beide Randreihen.' : 'Deine erste Reihenbreite bleibt fest. Die letzte Reihe passt sich an; Startstücke, Fugenversatz und Reststücke werden weiter automatisch geplant.'}</p>
+          </>}
           {room.layout.mode !== 'manual' && <div className={layout?.feasible ? 'auto-status' : 'auto-status blocked'}><Sparkles size={18} /><div><strong>{layout?.feasible ? 'Automatisch geplant' : 'Keine zulässige Verlegung gefunden'}</strong><p>Startstücke je Reihe werden so gewählt, dass alle Teilstücke mindestens {project.flooring.minEndPieceLength} mm lang sind und benachbarte Fugen mindestens {project.flooring.minJointOffset ?? 300} mm Abstand haben.</p></div></div>}
           <details className="manual-controls"><summary>Manuell anpassen (Experten)</summary><label className="toggle-field"><input type="checkbox" checked={room.layout.mode === 'manual'} onChange={e => updateRoom(r => ({ ...r, layout: { ...r.layout, mode: e.target.checked ? 'manual' : 'automatic' } }))} />Manuelle Rasterplanung aktivieren</label>
           {room.layout.mode === 'manual' && <>
@@ -276,7 +288,7 @@ function App() {
           {computation.errors.has(room.id) && <div className="warning-card"><TriangleAlert size={18} /><p>{computation.errors.get(room.id)}</p></div>}
           {layout && <>{layout.feasible && <><section className="edge-result"><h3>Deine Randreihen</h3><div className="edge-pair"><div className={layout.firstRowWidth < project.flooring.minRowWidth - .01 ? 'too-narrow' : ''}><span>Erste Reihe</span><strong>{format(layout.firstRowWidth)}<small>mm</small></strong></div>
             <div className={layout.lastRowWidth < project.flooring.minRowWidth - .01 ? 'too-narrow' : ''}><span>Letzte Reihe</span><strong>{format(layout.lastRowWidth)}<small>mm</small></strong></div></div>
-            <p><Check size={13} />Ziel: mindestens {project.flooring.minRowWidth} mm</p></section>
+            <p>{Math.min(layout.firstRowWidth, layout.lastRowWidth) < project.flooring.minRowWidth - .01 ? <TriangleAlert size={13} /> : <Check size={13} />}Ziel: mindestens {project.flooring.minRowWidth} mm</p></section>
             <section className="quantities"><h3>Material im Überblick</h3><div className="area-number">{format(layout.coveredArea / 1e6, 2)}<small>m²</small><span>verlegte Fläche</span></div>
               <dl><div><dt>Raumfläche</dt><dd>{format(layout.roomArea / 1e6, 2)} m²</dd></div><div><dt>Ganze Dielen</dt><dd>{layout.fullBoards}</dd></div><div><dt>Dielen mit Zuschnitt</dt><dd>{layout.cutBoards}</dd></div>
                 <div><dt>Reststücke wiederverwendet</dt><dd data-testid="reused-pieces">{layout.reusedPieces}</dd></div>

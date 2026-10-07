@@ -3,6 +3,14 @@ import { parseProject, parseRooms } from './project';
 import { serializeProject } from '../export/project';
 import { demoProject, newFloor } from '../model/types';
 describe('project JSON', () => {
+  it.each(['full', 180] as const)('round-trips the first row preference %s', firstRowWidth => {
+    const p = demoProject(); p.floors[0].rooms[0].layout.firstRowWidth = firstRowWidth;
+    expect(parseProject(serializeProject(p))).toEqual(p);
+  });
+  it('rejects invalid first-row width preferences', () => {
+    const p = demoProject(); p.floors[0].rooms[0].layout.firstRowWidth = 0;
+    expect(() => parseProject(serializeProject(p))).toThrow(/firstRowWidth/);
+  });
   it('round-trips all floors, room offsets, embedded backgrounds and calibration', () => {
     const project = demoProject(); const floor = newFloor('OG');
     floor.background = { name: 'plan.png', dataUrl: 'data:image/png;base64,aGVsbG8=', widthPx: 800, heightPx: 600, opacity: .45, origin: { x: 20, y: 30 } };

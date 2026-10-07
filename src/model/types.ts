@@ -4,7 +4,7 @@ export interface Flooring {
   expansionGap: number; minRowWidth: number; minEndPieceLength: number; jointOffset: number;
   minJointOffset?: number; boardsPerPack?: number; reservePercent?: number; sawKerf?: number;
 }
-export interface LayoutSettings { direction: number; offsetX: number; offsetY: number; mode?: 'automatic' | 'manual' }
+export interface LayoutSettings { direction: number; offsetX: number; offsetY: number; mode?: 'automatic' | 'manual'; firstRowWidth?: number | 'full' }
 export interface Room { id: string; name: string; polygon: Point[]; layout: LayoutSettings; flooringEnabled?: boolean }
 export interface Background {
   name: string; dataUrl: string; widthPx: number; heightPx: number; opacity: number; origin: Point;
