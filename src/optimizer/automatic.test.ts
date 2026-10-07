@@ -35,6 +35,23 @@ describe('automatic physical laying plan', () => {
     expect(new Set(plan.rows.map(row => row.originX)).size).toBeGreaterThan(1);
   });
   it('plans the original L-shaped example without any short pieces', () => { assertPlan(demoProject().floors[0].rooms[0]); });
+  it('reduces new boards through click-compatible offcuts and retains area conservation', () => {
+    const plan = assertPlan(room(5200, 2400));
+    expect(plan.reusedPieces).toBeGreaterThan(0); expect(plan.newBoards).toBeLessThan(plan.boards.length);
+    expect(plan.materialArea).toBe(plan.newBoards * flooring.length * flooring.width);
+    expect(plan.materialArea).toBeGreaterThanOrEqual(plan.coveredArea);
+    expect(plan.remainingOffcutArea).toBeLessThanOrEqual(plan.wasteArea + .1);
+    expect(new Set(plan.boards.map(b => b.material?.sourceBoardId)).size).toBe(plan.newBoards);
+    const reused = plan.boards.filter(b => b.material?.reusedFrom);
+    expect(new Set(reused.map(b => b.material!.reusedFrom)).size).toBe(reused.length);
+  });
+  it('actually starts later rows with offcuts from earlier row ends when joint spacing permits', () => {
+    const plan = assertPlan(room(1285 * 3 + 900 + 20));
+    const starter = plan.boards.find(b => b.column === 0 && b.material?.reusedFromPlacementId && Number(b.material.reusedFromPlacementId.split(':')[1]) > 0);
+    expect(starter).toBeDefined();
+    expect(starter!.usedLength).toBeGreaterThanOrEqual(299.99);
+    expect(Number(starter!.material!.reusedFromPlacementId!.split(':')[0])).toBeLessThan(starter!.row);
+  });
   it.each([1500, 2500, 3800, 5200, 6500])('satisfies end lengths and real neighbouring joints for a %s mm room', length => { assertPlan(room(length)); });
   it('emits no invalid boards or material quantities for an impossible 200 mm room', () => {
     const plan = layoutRoom(room(200), flooring);

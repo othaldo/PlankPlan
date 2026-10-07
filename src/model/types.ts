@@ -2,7 +2,7 @@ export interface Point { x: number; y: number }
 export interface Flooring {
   name: string; length: number; width: number; thickness: number;
   expansionGap: number; minRowWidth: number; minEndPieceLength: number; jointOffset: number;
-  minJointOffset?: number; boardsPerPack?: number; reservePercent?: number;
+  minJointOffset?: number; boardsPerPack?: number; reservePercent?: number; sawKerf?: number;
 }
 export interface LayoutSettings { direction: number; offsetX: number; offsetY: number; mode?: 'automatic' | 'manual' }
 export interface Room { id: string; name: string; polygon: Point[]; layout: LayoutSettings; flooringEnabled?: boolean }

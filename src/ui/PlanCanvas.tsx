@@ -122,10 +122,10 @@ export function PlanCanvas({ floor, selectedId, layouts, tool, draft, setDraft, 
           <polygon points={pointsString(points)} fill={room.flooringEnabled === false ? 'rgba(167,177,183,.22)' : layout?.feasible === false ? 'rgba(189,97,59,.12)' : 'rgba(233,238,226,.4)'} stroke="none"
             onPointerDown={e => roomPointer(e, room)} />
           {showBoards && !(preview?.id === room.id) && layout?.boards.map(board => <path key={board.id} d={pathData(board.polygon)} fillRule="evenodd"
-            fill={board.cut ? (board.row % 2 ? '#d5ad76' : '#dfbc88') : (board.row % 2 ? '#eee0c5' : '#e6d3af')}
-            stroke={board.cut ? '#a47940' : '#b6a082'} strokeWidth="0.7" vectorEffect="non-scaling-stroke"
+            fill={board.material?.reusedFrom ? '#bdd2ac' : board.cut ? (board.row % 2 ? '#d5ad76' : '#dfbc88') : (board.row % 2 ? '#eee0c5' : '#e6d3af')}
+            stroke={board.material?.reusedFrom ? '#5f8650' : board.cut ? '#a47940' : '#b6a082'} strokeWidth="0.7" vectorEffect="non-scaling-stroke"
             onPointerDown={e => roomPointer(e, room)}>
-            <title>{`${room.name} · Reihe ${board.row + 1} · Diele ${board.column + 1}\n${board.cut ? 'Zuschnitt' : 'Ganze Diele'}: ${board.usedLength.toFixed(1)} × ${board.usedWidth.toFixed(1)} mm\nAusgangsdiele: ${board.source.length} × ${board.source.width} mm\nAbfallfläche: ${((board.source.length * board.source.width - board.area) / 1e6).toFixed(3)} m²`}</title>
+            <title>{`${room.name} · Reihe ${board.row + 1} · Diele ${board.column + 1}\n${board.cut ? 'Zuschnitt' : 'Ganze Diele'}: ${board.usedLength.toFixed(1)} × ${board.usedWidth.toFixed(1)} mm\nAusgangsdiele: ${board.material?.sourceBoardId ?? 'neu'} · ${board.source.length} × ${board.source.width} mm${board.material?.reusedFromPlacementId ? `\nWiederverwendeter Rest aus Reihe ${Number(board.material.reusedFromPlacementId.split(':')[0]) + 1}: ${board.material.stockLength.toFixed(1)} mm` : ''}`}</title>
           </path>)}
           <polygon points={pointsString(points)} fill="none" stroke={selected ? '#4b6546' : '#8b9588'} strokeDasharray={room.flooringEnabled === false ? '7 4' : undefined} strokeWidth={selected ? 2.5 : 1.5} vectorEffect="non-scaling-stroke" pointerEvents="none" />
           <text x={(b.minX + b.maxX) / 2} y={(b.minY + b.maxY) / 2} textAnchor="middle" fontSize={labelSize} className="room-label" pointerEvents="none">{room.name}</text>

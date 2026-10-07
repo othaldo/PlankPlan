@@ -13,7 +13,7 @@ Lokale React/TypeScript/Vite-Web-App für eine praktische Laminat-Verlegeplanung
 - Hintergrund: eingebettetes Bild, Originalabmessungen in Pixeln, Deckkraft, Ursprung in Millimetern.
 - Kalibrierung: zwei Bildpixel-Punkte, reale Strecke in Millimetern, daraus berechnete Millimeter pro Pixel.
 - Raum: `id`, `name`, einfaches polygonales Raumprofil, `flooringEnabled` zum Ausschließen aus der Laminatplanung, `layout` mit Richtung, Offsets und optionalem Modus `automatic`/`manual`. Fehlender Modus bedeutet automatisch.
-- Zusätzliche Materialwerte: `minJointOffset`, `boardsPerPack`, `reservePercent`. Alte Projektdateien bleiben ladbar.
+- Zusätzliche Materialwerte: `minJointOffset`, `boardsPerPack`, `reservePercent`, `sawKerf`. Alte Projektdateien bleiben ladbar.
 - Dielenberechnung: Reihen- und Spaltenindex, Ausgangsrechteck mit Rotation, verbleibendes Zuschnitt-Multipolygon, belegte Fläche, ganze/geschnittene Diele und benötigte Abmessungen.
 
 Default-Material: Parador Selected Eiche Luxemburg, 1285 × 194 × 8 mm. Vergleichsvorlage: Wunderwerk Eiche Malmö, 1292 × 246 × 8 mm. Default-Bewegungsfuge 10 mm, Mindest-Reihenbreite 60 mm, Mindest-Endstücklänge 300 mm, Reihenversatz 400 mm; Werte editierbar und anhand der Herstelleranleitung anpassbar.
@@ -36,7 +36,9 @@ Default-Material: Parador Selected Eiche Luxemburg, 1285 × 194 × 8 mm. Verglei
 - Erste und letzte Reihenbreite sowie Start- und Endstücke aller Reihen auswerten.
 - Manuelle Quer-/Längs-Rasterkontrolle als expliziter Expertenmodus erhalten.
 - Raumfläche, verlegte Fläche, ganze/geschnittene Dielen, Ausgangsmaterial und rechnerischen Verschnitt auswerten.
-- Benötigte Pakete je Raum aus den Ausgangsdielen und einer einstellbaren Zusatzreserve aufrunden. Zuschnittabfall ist bereits in der Dielenanzahl enthalten. Reststücke werden noch nicht mehrfach verwendet.
+- Benötigte Pakete je Raum aus tatsächlich neuen Ausgangsdielen und einer einstellbaren Zusatzreserve aufrunden. Wiederverwendete Stücke benötigen keine zusätzliche Ausgangsdiele.
+- Reststückbestand pro Suchzustand: Herkunft, Länge, Breite und erhaltene Stirnkante. Geeignete Endabschnitte an späteren Reihenanfängen und Anfangsabschnitte an späteren Reihenenden verwenden; Mindestlänge, Fugenversatz und Sägeblattverlust beachten. Keine Doppelverwendung desselben Reststücks.
+- Wiederverwendete Stücke grün hervorheben, Ausgangsdiele im Hover anzeigen und noch nutzbare Reststücke ausweisen. Schräge Zuschnitte und Längsstreifen werden vorerst nicht wiederverwendet.
 - Gesamtes Projekt als JSON speichern/laden, einschließlich Bilder und Maßstab; zusätzliche Räume als JSON einfügen.
 - Lokaler Browserspeicher mit Hinweis bei Speicherfehlern.
 - Engine-Tests und Browser-Integrationstests.
@@ -44,7 +46,7 @@ Default-Material: Parador Selected Eiche Luxemburg, 1285 × 194 × 8 mm. Verglei
 ## Nächste Ausbaustufen aus der vollständigen Spezifikation
 
 1. Suche über mehrere Richtungen und gemeinsame Optimierung mit Reststück-Inventar. Automatische Startstücksuche mit Mindest-Endstücklänge und Fugenabstand ist bereits implementiert; die Suche erhebt keinen Anspruch auf globale Optimalität.
-2. Reststück-Inventar: Größe, Ausgangsdiele, Herkunft, Schnittart und intakte Klickkanten; geeignete Endabschnitte als nächste Anfangsstücke verwenden. Kein rein flächenbasierter Wiederverwendungsansatz.
+2. Raumübergreifendes Reststück-Inventar und Wiederverwendung komplexerer Zuschnitte. Ein raumbezogenes, klickkantengerechtes Inventar für gerade Querschnitte in voller Dielenbreite ist bereits implementiert.
 3. Exportierbarer Schnittplan und Dielen-/Reststückzuordnung. Sägeblattverlust und projektweite Material-/Reststückplanung. Packungsgrößen und Zusatzreserve je Raum sind bereits umgesetzt.
 4. Aussparungen für Kamin, Treppe, Einbauten und weitere Hindernisse.
 5. PDF-Grundrissimport, Hintergrund verschieben/drehen, Ausrichtung an längster Wand oder Fensterlicht.

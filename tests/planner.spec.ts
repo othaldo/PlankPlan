@@ -37,7 +37,10 @@ test('automatically corrects short end pieces, shows packs and excludes disabled
   for (const title of titles) {
     const length = title.match(/(?:Zuschnitt|Ganze Diele): ([\d.]+)/)?.[1]; expect(Number(length)).toBeGreaterThanOrEqual(299.99);
   }
-  const expectedPacks = Math.ceil(Math.ceil(titles.length * 1.05 - 1e-9) / 10);
+  const newBoards = Number(await page.getByTestId('new-boards').textContent());
+  const reusedPieces = Number(await page.getByTestId('reused-pieces').textContent());
+  expect(reusedPieces).toBeGreaterThan(0); expect(newBoards).toBeLessThan(titles.length);
+  const expectedPacks = Math.ceil(Math.ceil(newBoards * 1.05 - 1e-9) / 10);
   await expect(page.locator('.package-result strong')).toHaveText(`${expectedPacks} Pakete für diesen Raum`);
   await page.getByLabel('Laminat in diesem Raum verlegen').uncheck();
   await expect(page.locator('svg path > title')).toHaveCount(0);

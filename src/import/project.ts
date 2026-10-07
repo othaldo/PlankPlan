@@ -15,7 +15,7 @@ const layout = z.object({ direction: finite.min(-360).max(360), offsetX: finite.
 const room = z.object({ id, name, polygon, layout, flooringEnabled: z.boolean().optional() });
 const flooring = z.object({ name, length: finite, width: finite, thickness: finite,
   expansionGap: finite, minRowWidth: finite, minEndPieceLength: finite, jointOffset: finite,
-  minJointOffset: finite.min(0).optional(), boardsPerPack: finite.int().min(1).max(500).optional(), reservePercent: finite.min(0).max(100).optional() }).superRefine((f, ctx) => {
+  minJointOffset: finite.min(0).optional(), boardsPerPack: finite.int().min(1).max(500).optional(), reservePercent: finite.min(0).max(100).optional(), sawKerf: finite.min(0).max(10).optional() }).superRefine((f, ctx) => {
     try { validateFlooring(f); } catch (e) { ctx.addIssue({ code: 'custom', message: (e as Error).message }); }
   });
 const background = z.object({ name, dataUrl: z.string().max(16e6).regex(/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=\r\n]+$/),

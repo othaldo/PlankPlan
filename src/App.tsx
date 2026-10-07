@@ -61,7 +61,7 @@ function App() {
     } return { layouts, errors };
   }, [floor.rooms, project.flooring]);
   const layout = room ? computation.layouts.get(room.id) : undefined;
-  const packages = layout?.feasible && room?.flooringEnabled !== false ? packageQuantity(layout.boards.length, project.flooring) : null;
+  const packages = layout?.feasible && room?.flooringEnabled !== false ? packageQuantity(layout.newBoards, project.flooring) : null;
   const totalArea = [...computation.layouts.values()].reduce((a, l) => a + l.roomArea, 0) / 1e6;
 
   useEffect(() => {
@@ -231,6 +231,7 @@ function App() {
             <NumberField label="Bewegungsfuge" value={project.flooring.expansionGap} max={100} onChange={expansionGap => updateMaterial({ expansionGap })} /></div>
           <div className="field-pair"><NumberField label="Dielen pro Paket" value={project.flooring.boardsPerPack ?? 0} max={500} unit="Stk." onChange={boardsPerPack => updateMaterial({ boardsPerPack: boardsPerPack || undefined })} />
             <NumberField label="Zusätzliche Reserve" value={project.flooring.reservePercent ?? 5} max={100} unit="%" onChange={reservePercent => updateMaterial({ reservePercent })} /></div>
+          <NumberField label="Sägeblattbreite / Schnittverlust" value={project.flooring.sawKerf ?? 3} max={10} step={.1} onChange={sawKerf => updateMaterial({ sawKerf })} />
           {!project.flooring.boardsPerPack && <p className="hint">Paketinhalt von der Verpackung eingeben, damit die Paketmenge berechnet werden kann.</p>}
           <details><summary>Verlegeregeln</summary><NumberField label="Mindest-Reihenbreite" value={project.flooring.minRowWidth} min={1} max={project.flooring.width} onChange={minRowWidth => updateMaterial({ minRowWidth })} />
             <NumberField label="Mindest-Endstück" value={project.flooring.minEndPieceLength} min={1} max={project.flooring.length} onChange={minEndPieceLength => updateMaterial({ minEndPieceLength })} />
@@ -255,7 +256,7 @@ function App() {
           calibrationPoints={calibrationPoints} setCalibrationPoints={setCalibrationPoints} onSelect={setRoomId} onRoom={addRoom}
           onPolygon={(id, polygon) => updateFloor(f => ({ ...f, rooms: f.rooms.map(r => r.id === id ? { ...r, polygon } : r) }))}
           onError={setNotice} snap={snap} snapRooms={snapRooms} showBoards={showBoards} />
-        <div className="canvas-footer"><div className="legend"><span><i className="legend-full" />Ganze Diele</span><span><i className="legend-cut" />Zuschnitt</span><span><i className="legend-outline" />Raumkontur</span></div>
+        <div className="canvas-footer"><div className="legend"><span><i className="legend-full" />Ganze Diele</span><span><i className="legend-cut" />Zuschnitt</span><span><i className="legend-reused" />Reststück</span></div>
           <label><input type="checkbox" checked={showBoards} onChange={e => setShowBoards(e.target.checked)} />Dielen anzeigen</label></div>
         <div className="plan-note"><Ruler size={19} /><p><strong>Jede Diele hat ihr echtes Maß.</strong> Der Plan zeigt die verbleibende Geometrie nach dem Zuschnitt. Die Bewegungsfuge bleibt an der Raumkontur frei.</p></div>
       </main>
@@ -278,15 +279,20 @@ function App() {
             <p><Check size={13} />Ziel: mindestens {project.flooring.minRowWidth} mm</p></section>
             <section className="quantities"><h3>Material im Überblick</h3><div className="area-number">{format(layout.coveredArea / 1e6, 2)}<small>m²</small><span>verlegte Fläche</span></div>
               <dl><div><dt>Raumfläche</dt><dd>{format(layout.roomArea / 1e6, 2)} m²</dd></div><div><dt>Ganze Dielen</dt><dd>{layout.fullBoards}</dd></div><div><dt>Dielen mit Zuschnitt</dt><dd>{layout.cutBoards}</dd></div>
-                <div className="total"><dt>Dielen insgesamt</dt><dd>{layout.boards.length}</dd></div><div><dt>Ausgangsmaterial</dt><dd>{format(layout.materialArea / 1e6, 2)} m²</dd></div><div><dt>Rechnerischer Verschnitt</dt><dd>{format(layout.wastePercent)} %</dd></div><div><dt>Abfallfläche</dt><dd>{format(layout.wasteArea / 1e6, 2)} m²</dd></div></dl>
+                <div><dt>Reststücke wiederverwendet</dt><dd data-testid="reused-pieces">{layout.reusedPieces}</dd></div>
+                <div className="total"><dt>Neue Dielen insgesamt</dt><dd data-testid="new-boards">{layout.newBoards}</dd></div><div><dt>Ausgangsmaterial</dt><dd>{format(layout.materialArea / 1e6, 2)} m²</dd></div><div><dt>Restmaterial & Schnittverlust</dt><dd>{format(layout.wastePercent)} %</dd></div><div><dt>Verbleibende Restfläche</dt><dd>{format(layout.wasteArea / 1e6, 2)} m²</dd></div><div><dt>Davon nutzbare Reststücke</dt><dd>{format(layout.remainingOffcutArea / 1e6, 2)} m²</dd></div></dl>
               <div className="package-result"><strong>{packages ? `${packages.packages} ${packages.packages === 1 ? 'Paket' : 'Pakete'} für diesen Raum` : 'Paketinhalt fehlt'}</strong>
-                {packages ? <p>{project.flooring.boardsPerPack} Dielen / Paket · {project.flooring.reservePercent ?? 5} % Zusatzreserve<br />{layout.boards.length} benötigte Dielen + {packages.reserveBoards} Reserve<br />Gekauft: {packages.purchasedBoards} Dielen · {format(packages.area, 2)} m²</p> : <p>Links „Dielen pro Paket“ eintragen.</p>}</div>
-              <p className="hint">Zuschnitte sind in der Dielenmenge enthalten. Zusätzlich kommt die gewählte Reserve hinzu. Reststücke werden noch nicht wiederverwendet; die Menge ist daher konservativ.</p></section></>}
+                {packages ? <p>{project.flooring.boardsPerPack} Dielen / Paket · {project.flooring.reservePercent ?? 5} % Zusatzreserve<br />{layout.newBoards} neue Dielen + {packages.reserveBoards} Reserve<br />Gekauft: {packages.purchasedBoards} Dielen · {format(packages.area, 2)} m²</p> : <p>Links „Dielen pro Paket“ eintragen.</p>}</div>
+              <p className="hint">{room.layout.mode === 'manual' ? 'Im Expertenmodus wird jedes Dielenfeld als neue Diele gezählt.' : `Geeignete gerade, volle Dielenbreite umfassende Reststücke werden innerhalb dieses Raums wiederverwendet. Klickkanten und ${project.flooring.sawKerf ?? 3} mm Schnittverlust sind berücksichtigt.`} Schräg- und Längszuschnitte bleiben konservativ als Restmaterial gezählt.</p></section></>}
             {layout.warnings.length > 0 && <div className="warning-card"><TriangleAlert size={18} /><div><strong>Diese Stellen prüfen</strong><ul>{layout.warnings.map(w => <li key={w}>{w}</li>)}</ul></div></div>}
-            <details className="row-details"><summary>{layout.rows.length} Reihen im Detail</summary><table><thead><tr><th>Reihe</th><th>Breite</th><th>Start / Ende</th></tr></thead><tbody>{layout.rows.map(r => <tr key={r.index}><td>{r.index + 1}</td><td>{format(r.width, 0)} mm</td><td>{format(r.firstLength, 0)} / {format(r.lastLength, 0)}</td></tr>)}</tbody></table></details>
+            <details className="row-details"><summary>{layout.rows.length} Reihen im Detail</summary><table><thead><tr><th>Reihe</th><th>Start / Ende (mm)</th><th>Startquelle</th></tr></thead><tbody>{layout.rows.map(r => {
+              const first = layout.boards.find(b => b.row === r.index)?.material;
+              return <tr key={r.index}><td>{r.index + 1}</td><td>{format(r.firstLength, 0)} / {format(r.lastLength, 0)}</td><td>{first?.reusedFromPlacementId ? `Rest aus Reihe ${Number(first.reusedFromPlacementId.split(':')[0]) + 1}` : first?.sourceBoardId ?? 'Neue Diele'}</td></tr>;
+            })}</tbody></table></details>
+            {!!layout.offcuts.length && <details className="row-details"><summary>{layout.offcuts.length} noch verfügbare Reststücke</summary><table><thead><tr><th>Quelle</th><th>Länge (mm)</th><th>Geeignet für</th></tr></thead><tbody>{layout.offcuts.map(s => <tr key={s.id}><td>{s.sourceBoardId}</td><td>{format(s.length, 1)}</td><td>{s.edge === 'right' ? 'Reihenanfang' : 'Reihenende'}</td></tr>)}</tbody></table></details>}
           </>}
         </> : <div className="empty-results"><ScanLine size={32} /><p>{room ? 'In diesem Raum ist Laminat ausgeschaltet. Die Raumkontur bleibt als Teil des Grundrisses erhalten und kann an andere Räume einrasten. Er wird nicht mit Dielen gefüllt und benötigt keine Pakete.' : 'Zeichne einen Raum auf dem Grundriss. Hier siehst du anschließend Verlegung, Randreihen und Materialmenge.'}</p></div>}
-        <div className="coming-next"><small>ALS NÄCHSTES</small><p>Reststücke wiederverwenden<br />und einen Schnittplan erstellen.</p></div>
+        <div className="coming-next"><small>ALS NÄCHSTES</small><p>Schnittplan exportieren<br />und Reststücke raumübergreifend nutzen.</p></div>
       </aside>
     </div>
     {notice && <div className="notice" role="status"><span>{notice}</span><button aria-label="Hinweis schließen" onClick={() => setNotice('')}><X size={17} /></button></div>}

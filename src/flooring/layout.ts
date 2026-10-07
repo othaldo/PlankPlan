@@ -3,19 +3,24 @@ import type { MultiPolygon } from 'polygon-clipping';
 import { area, bounds, EPS, inset, mod, polygonPoints, rectangle, transform } from '../geometry/polygon';
 import type { Flooring, LayoutSettings, Room } from '../model/types';
 import { layoutAutomatic } from '../optimizer/automatic';
+import { allocateMaterial, initialMaterial } from './material';
+import type { Allocation, MaterialState, Offcut, Requirement } from './material';
 
 export interface Board {
   id: string; row: number; column: number; source: { x: number; y: number; length: number; width: number; rotation: number };
   polygon: MultiPolygon; area: number; cut: boolean; usedLength: number; usedWidth: number; pieceLengths: number[];
+  material?: Allocation;
 }
 export interface Row { index: number; width: number; fragmentWidths: number[]; firstLength: number; lastLength: number; originX: number; joints: number[] }
 export interface Layout {
   boards: Board[]; rows: Row[]; inner: MultiPolygon; roomArea: number; coveredArea: number;
   fullBoards: number; cutBoards: number; materialArea: number; wasteArea: number; wastePercent: number;
   firstRowWidth: number; lastRowWidth: number; warnings: string[]; feasible: boolean; resolvedOffsetY: number;
+  newBoards: number; reusedPieces: number; offcuts: Offcut[]; remainingOffcutArea: number;
 }
 export interface PreparedRoom { inner: MultiPolygon; local: MultiPolygon; extent: ReturnType<typeof bounds>; roomArea: number }
 export function validateFlooring(f: Flooring) {
+  if (f.sawKerf !== undefined && (!Number.isFinite(f.sawKerf) || f.sawKerf < 0 || f.sawKerf > 10)) throw new Error('Die Sägeblattbreite muss zwischen 0 und 10 mm liegen.');
   if ((f.minJointOffset !== undefined && (!Number.isFinite(f.minJointOffset) || f.minJointOffset < 0 || f.minJointOffset > f.length / 2)) ||
     (f.boardsPerPack !== undefined && (!Number.isInteger(f.boardsPerPack) || f.boardsPerPack < 1 || f.boardsPerPack > 500)) ||
     (f.reservePercent !== undefined && (!Number.isFinite(f.reservePercent) || f.reservePercent < 0 || f.reservePercent > 100)))
@@ -87,12 +92,31 @@ export function fillPrepared(prepared: PreparedRoom, f: Flooring, settings: Layo
   return { boards, rows, inner: prepared.inner, roomArea: prepared.roomArea, coveredArea,
     fullBoards: boards.filter(b => !b.cut).length, cutBoards: boards.filter(b => b.cut).length,
     materialArea, wasteArea, wastePercent: materialArea ? wasteArea / materialArea * 100 : 0,
-    firstRowWidth, lastRowWidth, warnings, feasible: short === 0, resolvedOffsetY: offsetY };
+    firstRowWidth, lastRowWidth, warnings, feasible: short === 0, resolvedOffsetY: offsetY,
+    newBoards: boards.length, reusedPieces: 0, offcuts: [], remainingOffcutArea: 0 };
+}
+export function applyMaterialReuse(layout: Layout, f: Flooring): Layout {
+  let inventory: MaterialState = initialMaterial();
+  const assignments = new Map<string, Allocation>();
+  for (const row of layout.rows) {
+    const boards = layout.boards.filter(b => b.row === row.index);
+    const requirements: Requirement[] = boards.map((b, i) => ({ id: b.id, length: b.usedLength, width: b.usedWidth, area: b.area,
+      rectangular: b.polygon.length === 1 && Math.abs(b.area - b.usedLength * b.usedWidth) < .1,
+      role: i === boards.length - 1 ? 'end' : i === 0 ? 'start' : 'other' }));
+    const material = allocateMaterial(requirements, f, inventory);
+    material.allocations.forEach(a => assignments.set(a.placementId, a)); inventory = material;
+  }
+  const materialArea = inventory.newBoards * f.length * f.width;
+  const wasteArea = Math.max(0, materialArea - layout.coveredArea);
+  return { ...layout, boards: layout.boards.map(b => ({ ...b, material: assignments.get(b.id) })),
+    newBoards: inventory.newBoards, reusedPieces: [...assignments.values()].filter(a => !!a.reusedFrom).length,
+    offcuts: inventory.offcuts, remainingOffcutArea: inventory.offcuts.reduce((a, s) => a + s.length * s.width, 0),
+    materialArea, wasteArea, wastePercent: materialArea ? wasteArea / materialArea * 100 : 0 };
 }
 export function emptyLayout(room: Room, warnings: string[] = []): Layout {
   return { boards: [], rows: [], inner: [], roomArea: area([[room.polygon.map(p => [p.x, p.y])]]), coveredArea: 0,
     fullBoards: 0, cutBoards: 0, materialArea: 0, wasteArea: 0, wastePercent: 0, firstRowWidth: 0, lastRowWidth: 0,
-    warnings, feasible: warnings.length === 0, resolvedOffsetY: 0 };
+    warnings, feasible: warnings.length === 0, resolvedOffsetY: 0, newBoards: 0, reusedPieces: 0, offcuts: [], remainingOffcutArea: 0 };
 }
 const autoCache = new Map<string, Layout>();
 export function layoutRoom(room: Room, flooring: Flooring): Layout {
