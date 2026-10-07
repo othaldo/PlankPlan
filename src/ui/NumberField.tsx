@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 export function NumberField({ label, value, onChange, min = 0, max = 1e6, step = 1, unit = 'mm' }:
-  { label: string; value: number; onChange: (n: number) => void; min?: number; max?: number; step?: number; unit?: string }) {
+  { label: string; value: number; onChange: (n: number) => void | boolean; min?: number; max?: number; step?: number; unit?: string }) {
   const [draft, setDraft] = useState(String(value));
   useEffect(() => setDraft(String(value)), [value]);
   function commit() {
     const n = Number(draft.replace(',', '.'));
-    if (draft.trim() && Number.isFinite(n) && n >= min && n <= max) onChange(n);
+    if (draft.trim() && Number.isFinite(n) && n >= min && n <= max) {
+      if (n !== value && onChange(n) === false) setDraft(String(value));
+    }
     else setDraft(String(value));
   }
   return <label className="field"><span>{label}</span><div className="input-unit">

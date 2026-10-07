@@ -20,7 +20,7 @@ Unter Windows geht es auch per Doppelklick auf **Start-PlankPlan.cmd**. Das star
 
 1. Etage auswählen oder eine weitere Etage anlegen.
 2. PNG, JPG oder WebP als Grundriss laden (bis 8 MB).
-3. Zwei Punkte einer bekannten Strecke anklicken, deren reale Länge in **mm** eintragen und den Maßstab übernehmen. Bereits gezeichnete Räume skalieren bei einer Neukalibrierung mit dem Bild.
+3. Zwei Punkte einer bekannten Strecke anklicken, deren reale Länge in **mm** eintragen und den Maßstab übernehmen. Kalibriert wird standardmäßig nur das Bild: vorhandene Raumkoordinaten und reale Maße bleiben erhalten, auch beim Ersetzen des Hintergrunds. Nur die ausdrückliche Option „Raumkonturen ebenfalls skalieren“ verändert alle Raumkonturen der Etage. Diese Option dient zuvor im falschen Bildmaßstab nachgezeichneten Räumen.
 4. Raum zeichnen: Eckpunkte anklicken, mit dem ersten Punkt oder dem Button schließen. Shift rastet auf 45°-Winkel; Backspace nimmt den letzten Punkt zurück; Escape bricht ab.
 5. Raum auswählen, benennen oder die Eckpunkte ziehen. Das Plus an jeder Kante fügt einen weiteren Eckpunkt ein; es lässt sich auch direkt an die gewünschte Position ziehen. Mit Tab und Enter/Leertaste können Punkte ebenfalls eingefügt werden. Beim Ziehen richtet Shift die nächstliegende Nachbarkante exakt waagerecht oder senkrecht aus; Drücken und Loslassen wirkt auch ohne weitere Mausbewegung. Die Ausrichtung wird blau angezeigt und hat Vorrang vor dem Einrasten an anderen Räumen. Einen Punkt anklicken und über „Punkt löschen“ oder Entf entfernen; mindestens drei Punkte bleiben erhalten. Räume dürfen konkav sein. Sich selbst kreuzende Konturen werden abgewiesen. Mit „Raum verschieben“ kann ein vollständiger Raum versetzt werden. Bei eingeschaltetem Einrasten verbinden sich nahe Ecken oder Wände exakt, ohne Raumgrößen zu verändern. Das Einrasten gilt auch beim Zeichnen und Eckpunkte-Ziehen.
 6. Dielenmaße und Bewegungsfuge einstellen. Vorlagen: Parador Selected Eiche Luxemburg **1285 × 194 × 8 mm**, Wunderwerk Eiche Malmö **1292 × 246 × 8 mm** (Maße aus der Vorgabe des Nutzers).
@@ -33,9 +33,17 @@ Unter „Erste Reihe“ lässt sich volle Dielenbreite wählen oder eine eigene 
 
 Unter dem Raumnamen kann „Laminat in diesem Raum verlegen“ ausgeschaltet werden, beispielsweise für Bad oder Küche. Solche Räume behalten ihre Geometrie, bleiben auswählbar und können an andere Räume einrasten; sie benötigen keine Dielen oder Pakete.
 
+„Raummaße eingeben“ erlaubt direkte Eingaben von Breite und Tiefe in Millimetern. Gemeint sind die Außenmaße entlang der horizontalen/vertikalen Planachsen; die Kontur wird proportional angepasst, mit festem Ursprung oben links. Unter „Eckpunkte & Wandlängen“ können einzelne X-/Y-Koordinaten geändert und alle Wandlängen kontrolliert werden. Ungültige Änderungen werden abgewiesen. Auch ausgeschlossene Räume bleiben so editierbar. Über „Bildposition im Plan“ lässt sich das Hintergrundbild unabhängig von den Räumen verschieben.
+
+„Rückgängig“ und „Wiederholen“ halten bis zu 30 Änderungen während der laufenden Sitzung vor. Vor Bildimport/-ersatz, Kalibrierung, Hintergrundentfernung und Projektimport wird zusätzlich eine vollständige Sicherung inklusive Bildern in IndexedDB gespeichert. Die jeweils letzte Sicherung übersteht ein Neuladen und lässt sich oben unter „Sicherung“ als JSON herunterladen oder wiederherstellen. Auch die Wiederherstellung kann rückgängig gemacht werden. Der erste Start mit dieser Funktion sichert den dann vorhandenen Stand; frühere Änderungen lassen sich damit nicht nachträglich rekonstruieren. Sicherungen und Autospeicherung gelten für die jeweilige Browseradresse einschließlich Port.
+
 Die Paketanzeige berechnet die benötigten Ausgangsdielen einschließlich realer Zuschnitte, addiert die gewählte Zusatzreserve und rundet auf vollständige Pakete auf. Für Parador Eiche Luxemburg sind 10 Dielen pro Paket voreingestellt, entsprechend den [Produktdaten von Raumtrend Hinze](https://www.raumtrend-hinze.de/laminat/parador-selected-laminat-eiche-luxemburg-1747215). Bei Wunderwerk oder eigenen Formaten bitte den Paketinhalt selbst eintragen. Der Paketinhalt ist editierbar; bei alten Luxemburg-Projekten wird die bekannte Vorlage beim Laden ergänzt.
 
-Die automatische Planung berücksichtigt nun wiederverwendbare, gerade Abschnitte in voller Dielenbreite innerhalb desselben Raums. Ein Endabschnitt behält die rechte werksseitige Stirnkante für einen späteren Reihenanfang; der linke Abschnitt einer verkürzten Anfangsdiele kann als Endstück dienen. Fugenversatz und Mindestlänge bleiben harte Regeln: Ein Rest muss unter Umständen gekürzt oder für eine spätere Reihe aufbewahrt werden. Pro Querschnitt werden standardmäßig 3 mm Sägeblattverlust abgezogen, editierbar über „Sägeblattbreite / Schnittverlust“. Schrägschnitte, Längsstreifen und fehlende Klickkanten sind konservativ von der Wiederverwendung ausgeschlossen. Im manuellen Expertenmodus ist die Wiederverwendung ausgeschaltet.
+Die Planung berücksichtigt wiederverwendbare, gerade Abschnitte in voller Dielenbreite im gemeinsamen Bestand über alle Räume und Etagen. Ein Endabschnitt behält die rechte werksseitige Stirnkante für einen späteren Reihenanfang; der linke Abschnitt einer verkürzten Anfangsdiele kann als Endstück dienen. Reststücke werden nicht gedreht, um unpassende Klickkanten zu ersetzen. In der automatischen Planung bleiben Fugenversatz und Mindestlänge harte Regeln: Ein Rest muss unter Umständen gekürzt oder für eine spätere Reihe aufbewahrt werden. Pro Querschnitt werden standardmäßig 3 mm Sägeblattverlust abgezogen, editierbar über „Sägeblattbreite / Schnittverlust“. Schrägschnitte, Längsstreifen und fehlende Klickkanten sind konservativ von der Wiederverwendung ausgeschlossen. Im manuellen Expertenmodus bleibt das vorgegebene Raster erhalten; passende Reststücke können auch dort zugeordnet werden.
+
+„Pakete optimieren“ sucht eine günstige Verlegereihenfolge und passt Startstücke der automatischen Räume an den bereits vorhandenen Bestand an. Die Paketanzahl wird für das gesamte Projekt einmal aufgerundet, inklusive einmaliger gemeinsamer Reserve. Ausgeschlossene Räume benötigen kein Material. Die Anzeige vergleicht den Bedarf mit gemeinsamem Einkauf ohne Reststücktausch und mit je Raum einzeln gerundeten Paketen. Herkunftsraum, Etage und Art des ursprünglichen Zuschnitts erscheinen bei den grünen Dielen und für Anfangs-/Endstücke in der Reihentabelle. Die empfohlene Raumreihenfolge muss eingehalten werden, damit benötigte Reststücke bereits vorhanden sind.
+
+Bis fünf Räume werden alle Raumreihenfolgen mit bestehenden Zuschnitten geprüft, bei größeren Projekten höchstens 128 reproduzierbare Reihenfolgen. Bis zu vier günstige Reihenfolgen werden mit einer materialabhängigen Startstücksuche nachgeplant, mit einem Zeitlimit zwischen Räumen. Das Ergebnis ist die beste gefundene Lösung und kein garantierter globaler Optimalwert. Die Suche läuft in einem Hintergrund-Worker und kann abgebrochen werden. Verlegerichtungen und manuelle erste Reihenbreiten bleiben erhalten. Reihenfolge und Suchmodus werden mit einer kanonischen Signatur der Planungsdaten im JSON gespeichert; der Plan und seine Materialzuordnungen werden beim Laden reproduziert. Änderungen an Geometrie oder Regeln erfordern eine erneute Optimierung; umbenannte Räume behalten die Materialplanung.
 
 ## Architektur
 
@@ -64,10 +72,13 @@ Die Suche ist endlich und garantiert kein globales mathematisches Optimum für b
 ```ts
 import { layoutRoom } from './src/flooring/layout';
 import { optimizeTransverse } from './src/optimizer/transverse';
+import { planProject, optimizeProject } from './src/optimizer/project';
 
 const layout = layoutRoom(room, project.flooring); // automatisch, wenn mode fehlt
 const optimum = optimizeTransverse(room, project.flooring);
 // optimum.offsetY in Millimetern; Ergebnis manuell veränderbar.
+const shared = planProject(project); // Gemeinsames Inventar und Paketbedarf.
+const best = optimizeProject(project); // Reihenfolgen und Startstücke vergleichen.
 ```
 
 ## Testen
@@ -108,6 +119,6 @@ Alternativ sind Punkte als `{ "x": 0, "y": 0 }` möglich. IDs werden neu vergebe
 - Mindeststücklänge und Stirnfugenversatz werden bei automatischer Planung als harte Regeln behandelt. Wenn keine gültige Lösung gefunden wird, bleibt die Dielenplanung leer und der Grund wird angezeigt.
 - Default-Bewegungsfuge und Mindestmaße sind editierbare Planungswerte, keine produktspezifisch verifizierten Herstellerregeln.
 
-Geplante Erweiterungen: raumübergreifendes Reststück-Inventar, modellierte Wiederverwendung von Schräg-/Längszuschnitten, gemeinsame Suche über Verlegerichtungen, exportierbarer Schnittplan, PDF-Grundrisse, Aussparungen, Bildtransformationen und durchgehende Verlegung über Türöffnungen. Das Einrasten verbindet Raumkoordinaten; es legt noch kein gemeinsames Dielenraster über mehrere Räume an. Einzelne Eckpunkte verschieben, Duplizieren, Löschen und vollständige Räume versetzen sind möglich; zusätzliche Eckpunkte in bestehende Konturen einfügen/entfernen folgt später.
+Geplante Erweiterungen: modellierte Wiederverwendung von Schräg-/Längszuschnitten, gemeinsame Suche über Verlegerichtungen, exportierbarer Schnittplan, PDF-Grundrisse, Aussparungen, Bildtransformationen und durchgehende Verlegung über Türöffnungen. Das Einrasten verbindet Raumkoordinaten; es legt noch kein gemeinsames Dielenraster über mehrere Räume an. Eckpunkte lassen sich einfügen, verschieben, ausrichten und entfernen.
 
 Die vollständige übernommene Anforderung und die MVP-Abgrenzung stehen in `docs/SPECIFICATION.md`.

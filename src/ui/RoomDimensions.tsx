@@ -1,0 +1,35 @@
+import { useState } from 'react';
+import type { Point, Room } from '../model/types';
+import { bounds } from '../geometry/polygon';
+import { changeCorner, resizeRoom } from '../geometry/dimensions';
+import { NumberField } from './NumberField';
+
+export function RoomDimensions({ room, onChange, onError }:
+  { room: Room; onChange: (polygon: Point[]) => void; onError: (message: string) => void }) {
+  const [corner, setCorner] = useState(0);
+  const index = Math.min(corner, room.polygon.length - 1), point = room.polygon[index], b = bounds(room.polygon);
+  const width = b.maxX - b.minX, depth = b.maxY - b.minY;
+  function apply(fn: () => Point[]) {
+    try { onChange(fn()); return true; } catch (e) { onError((e as Error).message); return false; }
+  }
+  const rounded = (n: number) => Math.round(n * 1000) / 1000;
+  return <div className="room-dimensions"><strong>Raummaße eingeben</strong>
+    <div className="field-pair"><NumberField label="Breite des Raums" value={rounded(width)} min={1} step={.1}
+      onChange={n => apply(() => resizeRoom(room.polygon, n, depth))} />
+      <NumberField label="Tiefe des Raums" value={rounded(depth)} min={1} step={.1}
+        onChange={n => apply(() => resizeRoom(room.polygon, width, n))} /></div>
+    <p className="hint">Außenmaße waagerecht und senkrecht im Plan, in Millimetern. Die Kontur wird angepasst; die obere linke Ecke bleibt an ihrem Platz.</p>
+    <details><summary>Eckpunkte & Wandlängen</summary>
+      <label className="field"><span>Eckpunkt auswählen</span><select aria-label="Eckpunkt auswählen" value={index} onChange={e => setCorner(Number(e.target.value))}>
+        {room.polygon.map((_, i) => <option key={i} value={i}>Punkt {i + 1}</option>)}</select></label>
+      <div className="field-pair"><NumberField label="Eckpunkt X" value={rounded(point.x)} min={-1e6} step={.1}
+        onChange={x => apply(() => changeCorner(room.polygon, index, { ...point, x }))} />
+        <NumberField label="Eckpunkt Y" value={rounded(point.y)} min={-1e6} step={.1}
+          onChange={y => apply(() => changeCorner(room.polygon, index, { ...point, y }))} /></div>
+      <p className="hint">Position im Plan. X läuft nach rechts, Y nach unten. Die Ecke oben links im Grundriss liegt bei X = 0 / Y = 0.</p>
+      <ol className="wall-lengths">{room.polygon.map((p, i) => { const q = room.polygon[(i + 1) % room.polygon.length];
+        return <li key={i}>Wand {i + 1}: {Math.hypot(p.x - q.x, p.y - q.y).toLocaleString('de-DE', { maximumFractionDigits: 1 })} mm</li>;
+      })}</ol>
+    </details>
+  </div>;
+}

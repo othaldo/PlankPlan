@@ -4,7 +4,7 @@ import { area, bounds, EPS, inset, mod, polygonPoints, rectangle, transform } fr
 import type { Flooring, LayoutSettings, Room } from '../model/types';
 import { layoutAutomatic } from '../optimizer/automatic';
 import { allocateMaterial, initialMaterial } from './material';
-import type { Allocation, MaterialState, Offcut, Requirement } from './material';
+import type { Allocation, MaterialContext, MaterialState, Offcut, Requirement } from './material';
 
 export interface Board {
   id: string; row: number; column: number; source: { x: number; y: number; length: number; width: number; rotation: number };
@@ -96,22 +96,28 @@ export function fillPrepared(prepared: PreparedRoom, f: Flooring, settings: Layo
     newBoards: boards.length, reusedPieces: 0, offcuts: [], remainingOffcutArea: 0 };
 }
 export function applyMaterialReuse(layout: Layout, f: Flooring): Layout {
-  let inventory: MaterialState = initialMaterial();
+  return allocateLayout(layout, f).layout;
+}
+export function allocateLayout(layout: Layout, f: Flooring, initial: MaterialState = initialMaterial(), context?: MaterialContext) {
+  let inventory = initial;
   const assignments = new Map<string, Allocation>();
   for (const row of layout.rows) {
     const boards = layout.boards.filter(b => b.row === row.index);
     const requirements: Requirement[] = boards.map((b, i) => ({ id: b.id, length: b.usedLength, width: b.usedWidth, area: b.area,
       rectangular: b.polygon.length === 1 && Math.abs(b.area - b.usedLength * b.usedWidth) < .1,
       role: i === boards.length - 1 ? 'end' : i === 0 ? 'start' : 'other' }));
-    const material = allocateMaterial(requirements, f, inventory);
+    const material = allocateMaterial(requirements, f, inventory, context);
     material.allocations.forEach(a => assignments.set(a.placementId, a)); inventory = material;
   }
-  const materialArea = inventory.newBoards * f.length * f.width;
+  const newBoards = inventory.newBoards - initial.newBoards;
+  const importedArea = [...assignments.values()].filter(a => a.reusedFromRoomKey && a.reusedFromRoomKey !== context?.roomKey).reduce((sum, a) => sum + a.stockLength * f.width, 0);
+  const materialArea = newBoards * f.length * f.width + importedArea;
   const wasteArea = Math.max(0, materialArea - layout.coveredArea);
-  return { ...layout, boards: layout.boards.map(b => ({ ...b, material: assignments.get(b.id) })),
-    newBoards: inventory.newBoards, reusedPieces: [...assignments.values()].filter(a => !!a.reusedFrom).length,
-    offcuts: inventory.offcuts, remainingOffcutArea: inventory.offcuts.reduce((a, s) => a + s.length * s.width, 0),
-    materialArea, wasteArea, wastePercent: materialArea ? wasteArea / materialArea * 100 : 0 };
+  const offcuts = inventory.offcuts.filter(s => s.sourceRoomKey === context?.roomKey);
+  return { inventory, layout: { ...layout, boards: layout.boards.map(b => ({ ...b, material: assignments.get(b.id) })),
+    newBoards, reusedPieces: [...assignments.values()].filter(a => !!a.reusedFrom).length,
+    offcuts, remainingOffcutArea: offcuts.reduce((a, s) => a + s.length * s.width, 0),
+    materialArea, wasteArea, wastePercent: materialArea ? wasteArea / materialArea * 100 : 0 } };
 }
 export function emptyLayout(room: Room, warnings: string[] = []): Layout {
   return { boards: [], rows: [], inner: [], roomArea: area([[room.polygon.map(p => [p.x, p.y])]]), coveredArea: 0,

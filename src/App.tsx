@@ -1,16 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDownToLine, ArrowUpFromLine, Check, ChevronRight, Copy, FileImage, Hand, Layers, MousePointer2, Move, Plus, Ruler, ScanLine, Sparkles, Trash2, TriangleAlert, X } from 'lucide-react';
-import { calibrate, scaleAround } from './geometry/calibration';
+import { calibrateFloor } from './geometry/calibration';
 import { validatePolygon } from './geometry/polygon';
-import { layoutRoom, validateFlooring } from './flooring/layout';
-import type { Layout } from './flooring/layout';
+import { validateFlooring } from './flooring/layout';
 import { packageQuantity } from './flooring/packages';
+import { materialSource } from './flooring/material';
 import { parseProject, parseRooms } from './import/project';
 import { downloadProject, serializeProject } from './export/project';
 import { demoProject, newFloor, PRESETS } from './model/types';
 import type { Floor, Flooring, Point, Project, Room } from './model/types';
 import { NumberField } from './ui/NumberField';
 import { PlanCanvas } from './ui/PlanCanvas';
+import { ProjectMaterial } from './ui/ProjectMaterial';
+import { RoomDimensions } from './ui/RoomDimensions';
+import { useProjectHistory } from './model/history';
+import { ensureCheckpoint, saveCheckpoint } from './model/checkpoint';
+import type { Checkpoint } from './model/checkpoint';
+import { planProject, planningSignature, roomKey } from './optimizer/project';
+import type { ProjectPlan } from './optimizer/project';
 import type { Tool } from './ui/PlanCanvas';
 import './App.css';
 
@@ -35,7 +42,12 @@ function readImage(file: File): Promise<{ dataUrl: string; widthPx: number; heig
 }
 function App() {
   const [initial] = useState(initialProject);
-  const [project, setProject] = useState(initial.project);
+  const { project, setProject, undo, redo, canUndo, canRedo } = useProjectHistory(initial.project);
+  const [checkpoint, setCheckpoint] = useState<Checkpoint | null>(null);
+  const latestProject = useRef(project);
+  useEffect(() => { latestProject.current = project; }, [project]);
+  const [scaleRooms, setScaleRooms] = useState(false);
+  const [canvasVersion, setCanvasVersion] = useState(0);
   const [floorId, setFloorId] = useState(project.floors[0].id);
   const [roomId, setRoomId] = useState<string | null>(project.floors[0].rooms[0]?.id ?? null);
   const [tool, setTool] = useState<Tool>('select');
@@ -51,18 +63,39 @@ function App() {
   const [roomsText, setRoomsText] = useState('{\n  "rooms": [{\n    "name": "Schlafzimmer",\n    "polygon": [[0,0],[4200,0],[4200,3600],[0,3600]]\n  }]\n}');
   const [optimizing, setOptimizing] = useState(false);
   const worker = useRef<Worker | null>(null);
+  const projectWorker = useRef<Worker | null>(null);
+  const [projectBusy, setProjectBusy] = useState(false), [projectProgress, setProjectProgress] = useState('');
+  const [optimizedProject, setOptimizedProject] = useState<{ floors: Floor[]; flooring: Flooring; materialPlan: Project['materialPlan']; plan: ProjectPlan } | null>(null);
   const imageInput = useRef<HTMLInputElement>(null), jsonInput = useRef<HTMLInputElement>(null);
   const floor = project.floors.find(f => f.id === floorId) ?? project.floors[0];
   const room = floor.rooms.find(r => r.id === roomId);
-  const computation = useMemo(() => {
-    const layouts = new Map<string, Layout>(), errors = new Map<string, string>();
-    for (const r of floor.rooms) {
-      try { layouts.set(r.id, layoutRoom(r, project.flooring)); } catch (e) { errors.set(r.id, (e as Error).message); }
-    } return { layouts, errors };
-  }, [floor.rooms, project.flooring]);
+  const globalPlan = useMemo(() => optimizedProject?.floors === project.floors && optimizedProject.flooring === project.flooring && optimizedProject.materialPlan === project.materialPlan
+    ? optimizedProject.plan : planProject(project), [project, optimizedProject]);
+  const computation = useMemo(() => ({
+    layouts: new Map(floor.rooms.flatMap(r => { const l = globalPlan.layouts.get(roomKey(floor.id, r.id)); return l ? [[r.id, l] as const] : []; })),
+    errors: new Map(floor.rooms.flatMap(r => { const error = globalPlan.errors.get(roomKey(floor.id, r.id)); return error ? [[r.id, error] as const] : []; })),
+  }), [floor.id, floor.rooms, globalPlan]);
   const layout = room ? computation.layouts.get(room.id) : undefined;
   const packages = layout?.feasible && room?.flooringEnabled !== false ? packageQuantity(layout.newBoards, project.flooring) : null;
   const totalArea = [...computation.layouts.values()].reduce((a, l) => a + l.roomArea, 0) / 1e6;
+
+  useEffect(() => {
+    let active = true;
+    void ensureCheckpoint(initial.project).then(saved => {
+      if (active) setCheckpoint(saved);
+    }).catch(() => { if (active) setNotice('Die automatische Sicherung ist nicht verfügbar. Bitte das Projekt als JSON speichern.'); });
+    return () => { active = false; };
+  }, [initial]);
+
+  async function safety(label: string) {
+    try {
+      setCheckpoint(await saveCheckpoint(project, label));
+      if (latestProject.current !== project) { setNotice('Das Projekt wurde währenddessen geändert. Bitte die Aktion erneut ausführen.'); return false; }
+      return true;
+    }
+    catch { setNotice('Die Sicherung konnte nicht gespeichert werden. Bitte zuerst JSON speichern.'); return false; }
+  }
+  function resetEditing() { setTool('select'); setDraft([]); setCalibrationPoints([]); setScaleRooms(false); setCanvasVersion(v => v + 1); }
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -74,6 +107,8 @@ function App() {
     worker.current?.terminate(); worker.current = null; setOptimizing(false);
   }, [project, floorId, roomId]);
   useEffect(() => () => worker.current?.terminate(), []);
+  useEffect(() => { projectWorker.current?.terminate(); projectWorker.current = null; setProjectBusy(false); }, [project.floors, project.flooring]);
+  useEffect(() => () => projectWorker.current?.terminate(), []);
   useEffect(() => {
     function key(event: KeyboardEvent) {
       if ((event.target as HTMLElement).matches('input,textarea,select')) return;
@@ -91,7 +126,7 @@ function App() {
   }
   function changeFloor(id: string) {
     setFloorId(id); setRoomId(project.floors.find(f => f.id === id)?.rooms[0]?.id ?? null);
-    setTool('select'); setDraft([]); setCalibrationPoints([]);
+    setTool('select'); setDraft([]); setCalibrationPoints([]); setScaleRooms(false);
   }
   function addFloor() {
     if (project.floors.length >= 50) { setNotice('Maximal 50 Etagen pro Projekt.'); return; }
@@ -99,7 +134,7 @@ function App() {
     setProject(p => ({ ...p, floors: [...p.floors, next] })); setFloorId(next.id); setRoomId(null); setDraft([]); setCalibrationPoints([]); setTool('select');
   }
   function selectTool(next: Tool) {
-    setTool(next); setDraft([]); setCalibrationPoints([]);
+    setTool(next); setDraft([]); setCalibrationPoints([]); setScaleRooms(false);
     if (next === 'draw' && floor.background && !floor.calibration) setNotice('Bitte zuerst den Grundriss kalibrieren, damit Raummaße stimmen.');
   }
   function addRoom(polygon: Point[]) {
@@ -113,22 +148,19 @@ function App() {
     if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 8e6) { setNotice('Bitte ein PNG-, JPG- oder WebP-Bild bis 8 MB wählen.'); return; }
     try {
       const image = await readImage(file);
+      if (!await safety('Vor dem Laden eines Grundrissbilds')) return;
       updateFloor(f => ({ ...f, background: { ...image, name: file.name.slice(0, 120), opacity: .45, origin: { x: 0, y: 0 } }, calibration: null }));
-      setCalibrationPoints([]); setDraft([]); setTool('calibrate'); setNotice('Grundriss geladen. Zwei Punkte einer bekannten Strecke anklicken und die reale Länge eintragen.');
+      setCalibrationPoints([]); setDraft([]); setScaleRooms(false); setTool('calibrate'); setNotice('Grundriss geladen. Bestehende Raummaße bleiben erhalten. Zwei Punkte einer bekannten Strecke anklicken und die reale Länge eintragen.');
     } catch (e) { setNotice((e as Error).message); }
   }
-  function applyCalibration() {
+  async function applyCalibration() {
     if (!floor.background || calibrationPoints.length !== 2) return;
     try {
-      const origin = floor.background.origin, oldScale = floor.calibration?.mmPerPixel ?? 5;
-      const px = calibrationPoints.map(p => ({ x: (p.x - origin.x) / oldScale, y: (p.y - origin.y) / oldScale })) as [Point, Point];
-      const calibration = calibrate(px, distance), factor = calibration.mmPerPixel / oldScale;
-      if (Math.max(floor.background.widthPx, floor.background.heightPx) * calibration.mmPerPixel > 1e6)
-        throw new Error('Der kalibrierte Grundriss würde größer als 1.000.000 mm. Bitte Messpunkte und reale Strecke prüfen.');
-      const rooms = floor.rooms.map(r => ({ ...r, polygon: r.polygon.map(p => scaleAround(p, origin, factor)) }));
-      for (const r of rooms) { const error = validatePolygon(r.polygon); if (error) throw new Error(error); }
-      updateFloor(f => ({ ...f, calibration, rooms }));
-      setCalibrationPoints([]); setTool('select'); setNotice('Maßstab kalibriert. Vorhandene Raumkonturen wurden mit dem Grundriss skaliert.');
+      const next = calibrateFloor(floor, calibrationPoints as [Point, Point], distance, scaleRooms);
+      if (!await safety('Vor dem Kalibrieren des Grundrissbilds')) return;
+      updateFloor(() => next);
+      setCalibrationPoints([]); setScaleRooms(false); setTool('select');
+      setNotice(scaleRooms ? 'Maßstab und Raumkonturen angepasst. Mit Rückgängig lässt sich die Änderung zurücknehmen.' : 'Bildmaßstab kalibriert. Alle vorhandenen Raummaße bleiben unverändert.');
     } catch (e) { setNotice((e as Error).message); }
   }
   function updateMaterial(changes: Partial<Flooring>) {
@@ -153,10 +185,31 @@ function App() {
     next.onerror = () => { next.terminate(); worker.current = null; setOptimizing(false); setNotice('Die Optimierung konnte nicht abgeschlossen werden.'); };
     next.postMessage({ room, flooring: project.flooring });
   }
+  function optimizePackages() {
+    projectWorker.current?.terminate();
+    const next = new Worker(new URL('./optimizer/project-worker.ts', import.meta.url), { type: 'module' });
+    projectWorker.current = next; setProjectBusy(true); setProjectProgress('');
+    const target = project;
+    next.onmessage = (event: MessageEvent<{ plan?: ProjectPlan; error?: string; completed?: number; total?: number }>) => {
+      if (projectWorker.current !== next) return;
+      if (event.data.completed !== undefined) { setProjectProgress(`${event.data.completed} von ${event.data.total} Varianten geprüft`); return; }
+      next.terminate(); projectWorker.current = null; setProjectBusy(false);
+      if (event.data.error) { setNotice(event.data.error); return; }
+      const plan = event.data.plan;
+      if (!plan?.valid) { setNotice('Mindestens ein Raum hat keinen gültigen Verlegeplan. Bitte die Raumhinweise prüfen.'); return; }
+      const materialPlan = { roomOrder: plan.order, adaptive: plan.adaptive, signature: planningSignature(target) };
+      setOptimizedProject({ floors: target.floors, flooring: target.flooring, materialPlan, plan });
+      setProject(p => ({ ...p, materialPlan }));
+      setNotice(`Beste gefundene Planung: ${plan.packages?.packages ?? '–'} ${plan.packages?.packages === 1 ? 'Paket' : 'Pakete'} · ${plan.newBoards} neue Dielen · ${plan.crossRoomReusedPieces} Reststücke aus anderen Räumen.`);
+    };
+    next.onerror = () => { next.terminate(); projectWorker.current = null; setProjectBusy(false); setNotice('Die Paketoptimierung konnte nicht abgeschlossen werden.'); };
+    next.postMessage(target);
+  }
   async function loadProject(file?: File) {
     if (!file) return;
     if (file.size > 24e6) { setNotice('Das Projekt darf maximal 24 MB groß sein.'); return; }
-    try { const next = parseProject(await file.text()); setProject(next); setFloorId(next.floors[0].id); setRoomId(next.floors[0].rooms[0]?.id ?? null);
+    try { const next = parseProject(await file.text()); if (!await safety('Vor dem Laden eines Projekts')) return;
+      setProject(next); setFloorId(next.floors[0].id); setRoomId(next.floors[0].rooms[0]?.id ?? null);
       setTool('select'); setDraft([]); setCalibrationPoints([]); setNotice('Projekt einschließlich aller Etagen und Grundrisse geladen.');
     } catch (e) { setNotice((e as Error).message); }
   }
@@ -174,7 +227,15 @@ function App() {
       <span>Plank<span className="brand-light">Plan</span><small>GUT GEPLANT. GUT VERLEGT.</small></span></a>
       <div className="project-title"><input aria-label="Projektname" value={project.name} maxLength={120} onChange={e => setProject(p => ({ ...p, name: e.target.value || 'Mein Verlegeprojekt' }))} />
         <span><span className="status-dot" />{saveState}</span></div>
-      <div className="header-actions"><button onClick={() => jsonInput.current?.click()}><ArrowUpFromLine size={16} />Projekt laden</button>
+      <div className="header-actions"><button disabled={!canUndo} onClick={() => { undo(); resetEditing(); setNotice('Letzte Änderung zurückgenommen.'); }}>Rückgängig</button>
+        <button disabled={!canRedo} onClick={() => { redo(); resetEditing(); setNotice('Änderung wiederhergestellt.'); }}>Wiederholen</button>
+        <details className="safety-menu"><summary>Sicherung</summary><div><p>{checkpoint ? `${checkpoint.label} · ${new Date(checkpoint.date).toLocaleString('de-DE')}` : 'Noch keine Sicherung vorhanden.'}</p>
+          <button disabled={!checkpoint} onClick={() => { if (checkpoint) downloadProject(checkpoint.project); }}>Sicherung als JSON speichern</button>
+          <button disabled={!checkpoint} onClick={() => { if (!checkpoint) return;
+            const next = parseProject(serializeProject(checkpoint.project)); setProject(next); setFloorId(next.floors[0].id); setRoomId(next.floors[0].rooms[0]?.id ?? null);
+            resetEditing(); setNotice('Gesicherten Stand wiederhergestellt. Rückgängig bringt dich zum vorherigen Stand zurück.'); }}>Sicherung wiederherstellen</button>
+        </div></details>
+        <button onClick={() => jsonInput.current?.click()}><ArrowUpFromLine size={16} />Projekt laden</button>
         <button className="primary" onClick={() => downloadProject(project)}><ArrowDownToLine size={16} />JSON speichern</button></div>
       <input hidden type="file" accept=".json,application/json" ref={jsonInput} onChange={e => { void loadProject(e.target.files?.[0]); e.target.value = ''; }} />
     </header>
@@ -193,13 +254,20 @@ function App() {
               <input aria-label="Bilddeckkraft" type="range" min="0" max="1" step=".05" value={floor.background.opacity} onChange={e => updateFloor(f => ({ ...f, background: { ...f.background!, opacity: Number(e.target.value) } }))} /></label>
             <button className="secondary full" onClick={() => selectTool('calibrate')}><Ruler size={15} />{floor.calibration ? 'Maßstab neu kalibrieren' : 'Maßstab kalibrieren'}</button>
             <p className={floor.calibration ? 'calibrated' : 'hint warning-text'}>{floor.calibration ? <><Check size={13} />{format(floor.calibration.mmPerPixel, 3)} mm / Bildpixel</> : 'Noch kein realer Maßstab festgelegt.'}</p>
-            <button className="text-button muted" onClick={() => { updateFloor(f => ({ ...f, background: null, calibration: null })); setCalibrationPoints([]); setTool('select'); }}>Hintergrund entfernen</button>
+            <details><summary>Bildposition im Plan</summary><div className="field-pair">
+              <NumberField label="Grundrissposition X" value={floor.background.origin.x} min={-1e6} onChange={x => updateFloor(f => ({ ...f, background: { ...f.background!, origin: { ...f.background!.origin, x } } }))} />
+              <NumberField label="Grundrissposition Y" value={floor.background.origin.y} min={-1e6} onChange={y => updateFloor(f => ({ ...f, background: { ...f.background!, origin: { ...f.background!.origin, y } } }))} />
+            </div><p className="hint">Verschiebt das Bild passend zu deinen Räumen.</p></details>
+            <button className="text-button muted" onClick={async () => { if (!await safety('Vor dem Entfernen des Grundrissbilds')) return;
+              updateFloor(f => ({ ...f, background: null, calibration: null })); setCalibrationPoints([]); setTool('select'); }}>Hintergrund entfernen</button>
           </div>}
           {tool === 'calibrate' && <div className="calibration-card"><strong>Zwei Punkte. Ein Maßstab.</strong><p>Wähle Anfang und Ende einer bekannten Strecke im Bild. {calibrationPoints.length}/2 Punkte gesetzt.</p>
             <NumberField label="Reale Strecke" value={distance} min={1} max={1e6} onChange={setDistance} />
             <button className="primary full" disabled={calibrationPoints.length !== 2} onClick={applyCalibration}>Maßstab übernehmen</button>
             <button className="text-button" onClick={() => setCalibrationPoints([])}>Messpunkte zurücksetzen</button>
-            {floor.rooms.length > 0 && <small>Beim Kalibrieren werden bestehende Räume mit dem Bild skaliert.</small>}
+            {floor.rooms.length > 0 && <><small>Kalibriert nur das Bild. Bestehende Raummaße bleiben erhalten.</small>
+              <label className="toggle-field"><input type="checkbox" checked={scaleRooms} onChange={e => setScaleRooms(e.target.checked)} />Raumkonturen ebenfalls skalieren</label>
+              {scaleRooms && <small className="warning-text">Ändert die Maße aller Räume dieser Etage. Nur für Konturen verwenden, die im bisherigen Bildmaßstab nachgezeichnet wurden.</small>}</>}
           </div>}
         </section>
         <section className="section"><h3><span className="step-number">02</span>Räume</h3>
@@ -209,6 +277,7 @@ function App() {
           <div className="button-row"><button className="secondary" disabled={!canDraw} onClick={() => selectTool('draw')}><Plus size={15} />Raum zeichnen</button>
             <button className="icon-button" title="Räume aus JSON einfügen" onClick={() => setRoomsDialog(true)}><ArrowUpFromLine size={16} /></button></div>
           {room && <><label className="field"><span>Raumname</span><input aria-label="Raumname" value={room.name} maxLength={120} onChange={e => updateRoom(r => ({ ...r, name: e.target.value || 'Raum' }))} /></label>
+            <RoomDimensions key={room.id} room={room} onChange={polygon => updateRoom(r => ({ ...r, polygon }))} onError={setNotice} />
             <label className="toggle-field"><input type="checkbox" checked={room.flooringEnabled !== false} onChange={e => updateRoom(r => ({ ...r, flooringEnabled: e.target.checked }))} />Laminat in diesem Raum verlegen</label>
             <div className="button-row"><button className="text-button muted" onClick={() => {
               if (floor.rooms.length >= 100) { setNotice('Maximal 100 Räume pro Etage.'); return; }
@@ -239,6 +308,8 @@ function App() {
             <NumberField label="Mindest-Fugenversatz" value={project.flooring.minJointOffset ?? 300} max={project.flooring.length / 2} onChange={minJointOffset => updateMaterial({ minJointOffset })} />
             <p className="hint">Planungswerte. Bitte an die Verlegeanleitung deines Bodens anpassen.</p></details>
         </section>
+        <ProjectMaterial project={project} plan={globalPlan} busy={projectBusy} progress={projectProgress} onOptimize={optimizePackages}
+          onCancel={() => { projectWorker.current?.terminate(); projectWorker.current = null; setProjectBusy(false); setNotice('Optimierung abgebrochen. Die bisherige Planung bleibt erhalten.'); }} />
       </aside>
       <main className="plan-panel"><div className="plan-heading"><div><span className="eyebrow">VERLEGEPLAN</span><h1>{floor.name}</h1><p>{floor.rooms.length} {floor.rooms.length === 1 ? 'Raum' : 'Räume'}<span>·</span>{format(totalArea)} m² Raumfläche</p></div>
         <span className="local-badge"><span className="status-dot" />Lokal auf deinem Gerät</span></div>
@@ -252,7 +323,7 @@ function App() {
           tool === 'move-room' ? <><Move size={14} />Raum anklicken und ziehen. Nahe Ecken und Wände rasten exakt zusammen.</> :
           <><MousePointer2 size={14} />+: Punkt einfügen · Punkt ziehen · Shift: waagerecht/senkrecht · Entf: ausgewählten Punkt löschen.</>}
           {tool === 'draw' && draft.length > 0 && <div className="drawing-actions"><button onClick={() => setDraft(draft.slice(0, -1))}>Punkt zurück</button><button disabled={draft.length < 3} onClick={() => addRoom(draft)}>Raum schließen</button></div>}</div>
-        <PlanCanvas floor={floor} selectedId={roomId} layouts={computation.layouts} tool={tool} draft={draft} setDraft={setDraft}
+        <PlanCanvas key={`${floor.id}:${canvasVersion}`} floor={floor} selectedId={roomId} layouts={computation.layouts} tool={tool} draft={draft} setDraft={setDraft}
           calibrationPoints={calibrationPoints} setCalibrationPoints={setCalibrationPoints} onSelect={setRoomId} onRoom={addRoom}
           onPolygon={(id, polygon) => updateFloor(f => ({ ...f, rooms: f.rooms.map(r => r.id === id ? { ...r, polygon } : r) }))}
           onError={setNotice} snap={snap} snapRooms={snapRooms} showBoards={showBoards} />
@@ -293,18 +364,18 @@ function App() {
               <dl><div><dt>Raumfläche</dt><dd>{format(layout.roomArea / 1e6, 2)} m²</dd></div><div><dt>Ganze Dielen</dt><dd>{layout.fullBoards}</dd></div><div><dt>Dielen mit Zuschnitt</dt><dd>{layout.cutBoards}</dd></div>
                 <div><dt>Reststücke wiederverwendet</dt><dd data-testid="reused-pieces">{layout.reusedPieces}</dd></div>
                 <div className="total"><dt>Neue Dielen insgesamt</dt><dd data-testid="new-boards">{layout.newBoards}</dd></div><div><dt>Ausgangsmaterial</dt><dd>{format(layout.materialArea / 1e6, 2)} m²</dd></div><div><dt>Restmaterial & Schnittverlust</dt><dd>{format(layout.wastePercent)} %</dd></div><div><dt>Verbleibende Restfläche</dt><dd>{format(layout.wasteArea / 1e6, 2)} m²</dd></div><div><dt>Davon nutzbare Reststücke</dt><dd>{format(layout.remainingOffcutArea / 1e6, 2)} m²</dd></div></dl>
-              <div className="package-result"><strong>{packages ? `${packages.packages} ${packages.packages === 1 ? 'Paket' : 'Pakete'} für diesen Raum` : 'Paketinhalt fehlt'}</strong>
-                {packages ? <p>{project.flooring.boardsPerPack} Dielen / Paket · {project.flooring.reservePercent ?? 5} % Zusatzreserve<br />{layout.newBoards} neue Dielen + {packages.reserveBoards} Reserve<br />Gekauft: {packages.purchasedBoards} Dielen · {format(packages.area, 2)} m²</p> : <p>Links „Dielen pro Paket“ eintragen.</p>}</div>
-              <p className="hint">{room.layout.mode === 'manual' ? 'Im Expertenmodus wird jedes Dielenfeld als neue Diele gezählt.' : `Geeignete gerade, volle Dielenbreite umfassende Reststücke werden innerhalb dieses Raums wiederverwendet. Klickkanten und ${project.flooring.sawKerf ?? 3} mm Schnittverlust sind berücksichtigt.`} Schräg- und Längszuschnitte bleiben konservativ als Restmaterial gezählt.</p></section></>}
+              {globalPlan.order.length <= 1 ? <div className="package-result"><strong>{packages ? `${packages.packages} ${packages.packages === 1 ? 'Paket' : 'Pakete'} für diesen Raum` : 'Paketinhalt fehlt'}</strong>
+                {packages ? <p>{project.flooring.boardsPerPack} Dielen / Paket · {project.flooring.reservePercent ?? 5} % Zusatzreserve<br />{layout.newBoards} neue Dielen + {packages.reserveBoards} Reserve<br />Gekauft: {packages.purchasedBoards} Dielen · {format(packages.area, 2)} m²</p> : <p>Links „Dielen pro Paket“ eintragen.</p>}</div> : <p className="hint">Pakete werden für alle Räume gemeinsam berechnet: links unter „Pakete für das ganze Projekt“.</p>}
+              <p className="hint">Geeignete gerade Reststücke in voller Dielenbreite werden im gemeinsamen Bestand verwendet. Klickkanten und {project.flooring.sawKerf ?? 3} mm Schnittverlust sind berücksichtigt. Schräg- und Längszuschnitte bleiben konservativ als Restmaterial gezählt.</p></section></>}
             {layout.warnings.length > 0 && <div className="warning-card"><TriangleAlert size={18} /><div><strong>Diese Stellen prüfen</strong><ul>{layout.warnings.map(w => <li key={w}>{w}</li>)}</ul></div></div>}
-            <details className="row-details"><summary>{layout.rows.length} Reihen im Detail</summary><table><thead><tr><th>Reihe</th><th>Start / Ende (mm)</th><th>Startquelle</th></tr></thead><tbody>{layout.rows.map(r => {
-              const first = layout.boards.find(b => b.row === r.index)?.material;
-              return <tr key={r.index}><td>{r.index + 1}</td><td>{format(r.firstLength, 0)} / {format(r.lastLength, 0)}</td><td>{first?.reusedFromPlacementId ? `Rest aus Reihe ${Number(first.reusedFromPlacementId.split(':')[0]) + 1}` : first?.sourceBoardId ?? 'Neue Diele'}</td></tr>;
+            <details className="row-details"><summary>{layout.rows.length} Reihen im Detail</summary><table><thead><tr><th>Reihe</th><th>Start / Ende (mm)</th><th>Startquelle</th><th>Endquelle</th></tr></thead><tbody>{layout.rows.map(r => {
+              const boards = layout.boards.filter(b => b.row === r.index);
+              return <tr key={r.index}><td>{r.index + 1}</td><td>{format(r.firstLength, 0)} / {format(r.lastLength, 0)}</td><td>{materialSource(boards[0]?.material)}</td><td>{materialSource(boards.at(-1)?.material)}</td></tr>;
             })}</tbody></table></details>
             {!!layout.offcuts.length && <details className="row-details"><summary>{layout.offcuts.length} noch verfügbare Reststücke</summary><table><thead><tr><th>Quelle</th><th>Länge (mm)</th><th>Geeignet für</th></tr></thead><tbody>{layout.offcuts.map(s => <tr key={s.id}><td>{s.sourceBoardId}</td><td>{format(s.length, 1)}</td><td>{s.edge === 'right' ? 'Reihenanfang' : 'Reihenende'}</td></tr>)}</tbody></table></details>}
           </>}
         </> : <div className="empty-results"><ScanLine size={32} /><p>{room ? 'In diesem Raum ist Laminat ausgeschaltet. Die Raumkontur bleibt als Teil des Grundrisses erhalten und kann an andere Räume einrasten. Er wird nicht mit Dielen gefüllt und benötigt keine Pakete.' : 'Zeichne einen Raum auf dem Grundriss. Hier siehst du anschließend Verlegung, Randreihen und Materialmenge.'}</p></div>}
-        <div className="coming-next"><small>ALS NÄCHSTES</small><p>Schnittplan exportieren<br />und Reststücke raumübergreifend nutzen.</p></div>
+        <div className="coming-next"><small>ALS NÄCHSTES</small><p>Schnittplan exportieren und Verlegeschritte zum Ausdrucken.</p></div>
       </aside>
     </div>
     {notice && <div className="notice" role="status"><span>{notice}</span><button aria-label="Hinweis schließen" onClick={() => setNotice('')}><X size={17} /></button></div>}

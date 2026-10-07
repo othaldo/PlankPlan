@@ -76,6 +76,31 @@ test('fixes the first row width while keeping automatic laying and remembers the
   await page.getByLabel('Erste Reihe', { exact: true }).selectOption('full');
   await page.screenshot({ path: 'test-results/plankplan-full-first-row.png', fullPage: true });
 });
+test('optimizes project-wide packs with shared offcuts and reproduces sources after JSON import', async ({ page }) => {
+  await page.goto('/');
+  const room = (id: string, length: number, name: string) => ({ id, name, polygon: [{x:0,y:0},{x:length,y:0},{x:length,y:194},{x:0,y:194}], layout: { direction:0, offsetX:0, offsetY:0, firstRowWidth:'full' } });
+  const project = { version:1, name:'Pakete gemeinsam', flooring: { name:'Testdiele', length:1285, width:194, thickness:8, expansionGap:0, minRowWidth:60, minEndPieceLength:300, jointOffset:400, minJointOffset:300, boardsPerPack:2, reservePercent:0 },
+    floors: [{ id:'OG', name:'Obergeschoss', background:null, calibration:null, rooms:[room('r',1767,'Langer Raum')] }, { id:'EG', name:'Erdgeschoss', background:null, calibration:null, rooms:[room('r',800,'Kurzer Raum')] }] };
+  const input = page.locator('input[type=file][accept=".json,application/json"]');
+  await input.setInputFiles({ name:'pakete.json', mimeType:'application/json', buffer:Buffer.from(JSON.stringify(project)) });
+  await expect(page.getByTestId('project-packages')).toContainText('2 Pakete insgesamt');
+  await page.getByRole('button', { name:'Pakete optimieren', exact:true }).click();
+  await expect(page.locator('.notice')).toContainText('Beste gefundene Planung: 1 Paket', { timeout:30000 });
+  await expect(page.getByTestId('project-new-boards')).toHaveText('2');
+  await expect(page.getByTestId('cross-room-pieces')).toHaveText('1');
+  await expect(page.getByTestId('project-packages')).toContainText('1 Paket insgesamt');
+  expect((await page.locator('svg path > title').allTextContents()).join('\n')).toContain('Kurzer Raum (Erdgeschoss)');
+  await page.getByText('Verlegereihenfolge (2)', { exact:true }).click();
+  await expect(page.locator('.project-order li').first()).toHaveText('Erdgeschoss · Kurzer Raum');
+  const downloading = page.waitForEvent('download'); await page.getByRole('button', { name:'JSON speichern' }).click();
+  const downloaded = await downloading; await input.setInputFiles((await downloaded.path())!);
+  await expect(page.getByTestId('cross-room-pieces')).toHaveText('1');
+  await expect(page.getByTestId('project-packages')).toContainText('1 Paket insgesamt');
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('plankplan.project.v1') ?? 'null')?.materialPlan?.adaptive)).toBe(true);
+  await page.reload(); await expect(page.getByTestId('project-new-boards')).toHaveText('2');
+  await expect(page.getByTestId('cross-room-pieces')).toHaveText('1');
+  await page.screenshot({ path:'test-results/plankplan-project-packages.png', fullPage:true });
+});
 test('snaps an entire room flush against an adjacent room wall without changing its size', async ({ page }) => {
   await page.goto('/'); await page.getByRole('button', { name: 'Etage hinzufügen' }).click();
   await page.getByRole('button', { name: 'Räume aus JSON einfügen' }).click();
@@ -172,7 +197,9 @@ test('loads an image, calibrates two points and traces a polygon in world coordi
   await page.getByLabel('Reale Strecke').fill('6000'); await page.getByLabel('Reale Strecke').press('Tab');
   await page.getByRole('button', { name: 'Maßstab übernehmen' }).click();
   await expect(page.getByText('10,000 mm / Bildpixel')).toBeVisible();
+  await page.getByRole('button', { name: 'Plan einpassen', exact: true }).click();
   await page.getByRole('button', { name: 'Raum zeichnen', exact: true }).first().click();
+  await svg.scrollIntoViewIfNeeded();
   for (const [x, y] of [[600, 600], [7000, 600], [7000, 5000], [600, 5000]]) {
     p = await screenPoint(x, y); await page.mouse.click(p.x, p.y);
   }
@@ -190,4 +217,84 @@ test('shows the editor on narrow screens and rejects malformed imports', async (
   await expect(page.getByRole('heading', { name: 'Wohnzimmer' })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ path: 'test-results/plankplan-mobile.png', fullPage: true });
+});
+
+test('edits real room dimensions and individual corners with undo and valid JSON persistence', async ({ page }) => {
+  await page.goto('/');
+  const storedPolygon = () => page.evaluate(() => JSON.parse(localStorage.getItem('plankplan.project.v1') ?? 'null')?.floors[0].rooms[0].polygon);
+  await expect.poll(storedPolygon).toBeTruthy(); const original = await storedPolygon();
+  await page.getByLabel('Breite des Raums', { exact: true }).fill('6000'); await page.getByLabel('Breite des Raums', { exact: true }).press('Enter');
+  await expect.poll(async () => (await storedPolygon())[1].x).toBe(6000);
+  await page.getByLabel('Tiefe des Raums', { exact: true }).fill('4000'); await page.getByLabel('Tiefe des Raums', { exact: true }).press('Enter');
+  await expect.poll(async () => (await storedPolygon())[4].y).toBe(4000);
+  await page.getByRole('button', { name: 'Rückgängig', exact: true }).click();
+  await expect(page.getByLabel('Tiefe des Raums', { exact: true })).toHaveValue('4700');
+  await expect(page.getByLabel('Breite des Raums', { exact: true })).toHaveValue('6000');
+  await page.getByRole('button', { name: 'Rückgängig', exact: true }).click(); await expect.poll(storedPolygon).toEqual(original);
+  await page.getByRole('button', { name: 'Wiederholen', exact: true }).click();
+  await expect(page.getByLabel('Breite des Raums', { exact: true })).toHaveValue('6000');
+  await page.getByText('Eckpunkte & Wandlängen', { exact: true }).click();
+  await page.getByLabel('Eckpunkt auswählen').selectOption('1');
+  await page.getByLabel('Eckpunkt Y', { exact: true }).fill('100'); await page.getByLabel('Eckpunkt Y', { exact: true }).press('Enter');
+  await expect.poll(async () => (await storedPolygon())[1]).toEqual({ x: 6000, y: 100 });
+  const valid = await storedPolygon();
+  await page.getByLabel('Eckpunkt Y', { exact: true }).fill('4100'); await page.getByLabel('Eckpunkt Y', { exact: true }).press('Enter');
+  await expect(page.getByRole('status')).toContainText('kreuzen');
+  await expect(page.getByLabel('Eckpunkt Y', { exact: true })).toHaveValue('100'); expect(await storedPolygon()).toEqual(valid);
+  const downloading = page.waitForEvent('download'); await page.getByRole('button', { name: 'JSON speichern', exact: true }).click();
+  await page.locator('input[type=file][accept=".json,application/json"]').setInputFiles((await (await downloading).path())!);
+  await expect(page.getByRole('status')).toContainText('Projekt einschließlich');
+  await expect.poll(storedPolygon).toEqual(valid); await page.reload(); await expect.poll(storedPolygon).toEqual(valid);
+  await expect(page.getByLabel('Breite des Raums', { exact: true })).toHaveValue('6000');
+  await page.screenshot({ path: 'test-results/plankplan-manual-room-dimensions.png', fullPage: true });
+});
+
+test('calibrates and replaces backgrounds without scaling existing rooms and restores the saved state after reload', async ({ page }) => {
+  await page.goto('/');
+  const storedFloor = () => page.evaluate(() => JSON.parse(localStorage.getItem('plankplan.project.v1') ?? 'null')?.floors[0]);
+  await expect.poll(storedFloor).toBeTruthy(); const original = await storedFloor();
+  const base64 = await page.evaluate(() => { const c = document.createElement('canvas'); c.width = 800; c.height = 600;
+    const ctx = c.getContext('2d')!; ctx.fillStyle = 'white'; ctx.fillRect(0, 0, 800, 600); return c.toDataURL('image/png').split(',')[1]; });
+  const image = page.locator('input[type=file][accept="image/png,image/jpeg,image/webp"]');
+  await image.setInputFiles({ name: 'existing-rooms.png', mimeType: 'image/png', buffer: Buffer.from(base64, 'base64') });
+  await expect(page.getByRole('status')).toContainText('Grundriss geladen');
+  await expect.poll(async () => (await storedFloor()).rooms).toEqual(original.rooms);
+  const svg = page.getByRole('img', { name: 'Interaktiver Verlegeplan' });
+  const clickWorld = async (x: number, y: number) => { const q = await svg.evaluate((node, p) => {
+    const q = new DOMPoint(p.x, p.y).matrixTransform((node as SVGSVGElement).getScreenCTM()!); return {x:q.x,y:q.y}; }, {x,y}); await page.mouse.click(q.x,q.y); };
+  await clickWorld(500, 500); await clickWorld(3500, 500);
+  await page.getByLabel('Reale Strecke').fill('6000'); await page.getByLabel('Reale Strecke').press('Enter');
+  await expect(page.getByLabel('Raumkonturen ebenfalls skalieren')).not.toBeChecked();
+  await page.getByRole('button', {name:'Maßstab übernehmen',exact:true}).click();
+  await expect(page.getByRole('status')).toContainText('Raummaße bleiben unverändert');
+  await expect.poll(async () => (await storedFloor()).calibration?.mmPerPixel).toBeCloseTo(10, 5);
+  await expect.poll(async () => (await storedFloor()).rooms).toEqual(original.rooms);
+  await page.reload(); await expect(page.getByText('10,000 mm / Bildpixel')).toBeVisible();
+  await page.getByText('Sicherung', {exact:true}).click();
+  await expect(page.getByText('Vor dem Kalibrieren des Grundrissbilds', {exact:false})).toBeVisible();
+  await page.getByRole('button', {name:'Sicherung wiederherstellen',exact:true}).click();
+  await expect(page.getByRole('status')).toContainText('Gesicherten Stand wiederhergestellt');
+  await expect.poll(async () => (await storedFloor()).calibration).toBeNull();
+  await expect.poll(async () => (await storedFloor()).rooms).toEqual(original.rooms);
+  await expect.poll(async () => (await storedFloor()).background.name).toBe('existing-rooms.png');
+  await page.getByRole('button', {name:'Rückgängig',exact:true}).click();
+  await expect.poll(async () => (await storedFloor()).calibration?.mmPerPixel).toBeCloseTo(10, 5);
+  await page.getByText('Sicherung', {exact:true}).click();
+  await image.setInputFiles({ name: 'replacement.png', mimeType: 'image/png', buffer: Buffer.from(base64, 'base64') });
+  await expect(page.getByRole('status')).toContainText('Grundriss geladen');
+  await expect(page.getByLabel('Raumkonturen ebenfalls skalieren')).not.toBeChecked();
+  await clickWorld(500, 500); await clickWorld(3500, 500);
+  await page.getByLabel('Reale Strecke').fill('3000'); await page.getByLabel('Reale Strecke').press('Enter');
+  await page.getByRole('button', {name:'Maßstab übernehmen',exact:true}).click();
+  await expect.poll(async () => (await storedFloor()).calibration?.mmPerPixel).toBeCloseTo(5, 5);
+  await expect.poll(async () => (await storedFloor()).rooms).toEqual(original.rooms);
+  await page.getByRole('button', {name:'Maßstab neu kalibrieren',exact:true}).click();
+  await clickWorld(500, 500); await clickWorld(3500, 500);
+  await page.getByLabel('Reale Strecke').fill('6000'); await page.getByLabel('Reale Strecke').press('Enter');
+  await page.getByLabel('Raumkonturen ebenfalls skalieren').check();
+  await page.getByRole('button', {name:'Maßstab übernehmen',exact:true}).click();
+  await expect.poll(async () => (await storedFloor()).rooms[0].polygon[1].x).toBeCloseTo(10400, 3);
+  await page.getByRole('button', {name:'Rückgängig',exact:true}).click();
+  await expect.poll(async () => (await storedFloor()).rooms).toEqual(original.rooms);
+  await page.screenshot({path:'test-results/plankplan-safe-calibration.png',fullPage:true});
 });

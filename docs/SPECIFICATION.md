@@ -9,6 +9,7 @@ Lokale React/TypeScript/Vite-Web-App für eine praktische Laminat-Verlegeplanung
 ## Datenmodell
 
 - Projekt: `version`, `name`, `flooring`, `floors[]`.
+- Optionales `materialPlan`: empfohlene `roomOrder` als kombinierte Etagen-/Raum-IDs, `adaptive` für materialabhängige Startstücke und kanonische `signature` der relevanten Planungsdaten. Alte Dateien ohne dieses Feld bleiben ladbar. Herkunftsraum, Etage und Zuschnittseite stehen in der berechneten Materialzuordnung; Reststück-IDs sind raumübergreifend eindeutig.
 - Jede Etage: `id`, `name`, `background`, `calibration`, `rooms[]`.
 - Hintergrund: eingebettetes Bild, Originalabmessungen in Pixeln, Deckkraft, Ursprung in Millimetern.
 - Kalibrierung: zwei Bildpixel-Punkte, reale Strecke in Millimetern, daraus berechnete Millimeter pro Pixel.
@@ -22,7 +23,9 @@ Default-Material: Parador Selected Eiche Luxemburg, 1285 × 194 × 8 mm. Verglei
 
 - Mehrere Etagen mit unabhängigen Hintergründen, Kalibrierungen und Räumen.
 - PNG-/JPG-/WebP-Grundriss laden und Deckkraft einstellen.
-- Zwei-Punkte-Kalibrierung; vorhandene Konturen bleiben bei Neukalibrierung am Bild ausgerichtet.
+- Zwei-Punkte-Kalibrierung ausschließlich des Bildmaßstabs als Standard. Vorhandene Raummaße bleiben bei Bildwechsel und Neukalibrierung unverändert. Ausdrückliche Option zum gemeinsamen Skalieren der Konturen; standardmäßig ausgeschaltet und nach Anwendung zurückgesetzt.
+- Manuelle Breite/Tiefe in Planachsen, proportionale Anpassung der Kontur mit festem Ursprung oben links. Einzelne Eckpunkte als X-/Y-Koordinaten editieren und Wandlängen anzeigen; ungültige Konturen abweisen. Bildposition unabhängig von Raumgeometrie eingeben.
+- Bis zu 30 Änderungen rückgängig machen/wiederholen. Vollständige persistente Sicherung vor Bildwechsel, Kalibrierung, Hintergrundentfernung und Projektimport; letzte Sicherung aus IndexedDB nach Neuladen wiederherstellbar und als JSON exportierbar. Kein nachträglicher Verlauf für Änderungen vor Einführung der Funktion.
 - Polygonraum zeichnen und schließen, konkave Räume unterstützen; ungültige Konturen abweisen.
 - Zeichnen mit Millimeter-Raster und optionalen 45°-Winkeln; letzten Punkt zurücknehmen und abbrechen.
 - Räume auswählen, umbenennen, duplizieren, löschen; bestehende Eckpunkte ziehen. Plus-Griffe an allen Kanten einschließlich der Schlusskante fügen Punkte per Klick, Ziehen oder Tastatur ein. Ausgewählte Punkte per Button oder Entf löschen; mindestens drei Punkte erhalten. Ungültige Änderungen überschreiben die gültige Kontur nicht.
@@ -38,20 +41,22 @@ Default-Material: Parador Selected Eiche Luxemburg, 1285 × 194 × 8 mm. Verglei
 - Erste und letzte Reihenbreite sowie Start- und Endstücke aller Reihen auswerten.
 - Manuelle Quer-/Längs-Rasterkontrolle als expliziter Expertenmodus erhalten.
 - Raumfläche, verlegte Fläche, ganze/geschnittene Dielen, Ausgangsmaterial und rechnerischen Verschnitt auswerten.
-- Benötigte Pakete je Raum aus tatsächlich neuen Ausgangsdielen und einer einstellbaren Zusatzreserve aufrunden. Wiederverwendete Stücke benötigen keine zusätzliche Ausgangsdiele.
+- Pakete projektweit aus tatsächlich neuen Ausgangsdielen und einer einmaligen einstellbaren Zusatzreserve aufrunden. Einzelraum-Pakete werden nur bei einem aktiven Raum angezeigt. Vergleich mit gemeinsamem Einkauf ohne Raumtausch und einzeln gerundeten Raumbedarfen.
 - Reststückbestand pro Suchzustand: Herkunft, Länge, Breite und erhaltene Stirnkante. Geeignete Endabschnitte an späteren Reihenanfängen und Anfangsabschnitte an späteren Reihenenden verwenden; Mindestlänge, Fugenversatz und Sägeblattverlust beachten. Keine Doppelverwendung desselben Reststücks.
 - Wiederverwendete Stücke grün hervorheben, Ausgangsdiele im Hover anzeigen und noch nutzbare Reststücke ausweisen. Schräge Zuschnitte und Längsstreifen werden vorerst nicht wiederverwendet.
+- Gemeinsames Reststück-Inventar über alle Räume und Etagen. Nur Material bereits geplanter Räume kann übernommen werden; keine Doppelverwendung. Übertragene Stockfläche wird beim Herkunftsraum abgezogen und beim Empfänger gezählt, sodass die Raummaterialflächen das gesamte neue Ausgangsmaterial ergeben.
+- Paketoptimierung im abbrechbaren Worker: bis fünf Räume alle Reihenfolgen mit bestehenden Zuschnitten, danach begrenzte reproduzierbare Reihenfolgensuche. Bis zu vier günstige Reihenfolgen materialabhängig nachplanen. Pakete zuerst minimieren, dann neue Dielen; eine gültige bisherige Lösung bleibt als Vergleich erhalten. Kein garantiertes globales Minimum. Verlegerichtungen und festgelegte erste Reihenbreiten bleiben erhalten.
 - Gesamtes Projekt als JSON speichern/laden, einschließlich Bilder und Maßstab; zusätzliche Räume als JSON einfügen.
 - Lokaler Browserspeicher mit Hinweis bei Speicherfehlern.
 - Engine-Tests und Browser-Integrationstests.
 
 ## Nächste Ausbaustufen aus der vollständigen Spezifikation
 
-1. Suche über mehrere Richtungen und gemeinsame Optimierung mit Reststück-Inventar. Automatische Startstücksuche mit Mindest-Endstücklänge und Fugenabstand ist bereits implementiert; die Suche erhebt keinen Anspruch auf globale Optimalität.
-2. Raumübergreifendes Reststück-Inventar und Wiederverwendung komplexerer Zuschnitte. Ein raumbezogenes, klickkantengerechtes Inventar für gerade Querschnitte in voller Dielenbreite ist bereits implementiert.
-3. Exportierbarer Schnittplan und Dielen-/Reststückzuordnung. Sägeblattverlust und projektweite Material-/Reststückplanung. Packungsgrößen und Zusatzreserve je Raum sind bereits umgesetzt.
+1. Suche über mehrere Richtungen. Automatische Startstücke, gemeinsames Reststück-Inventar und Paketoptimierung über Raumreihenfolgen sind bereits implementiert; die Suche erhebt keinen Anspruch auf globale Optimalität.
+2. Wiederverwendung komplexerer Zuschnitte. Das raumübergreifende, klickkantengerechte Inventar für gerade Querschnitte in voller Dielenbreite ist bereits implementiert.
+3. Exportierbarer Schnittplan und druckbare Dielen-/Reststückzuordnung. Sägeblattverlust, projektweite Material-/Reststückplanung, Packungsgrößen und gemeinsame Zusatzreserve sind bereits umgesetzt.
 4. Aussparungen für Kamin, Treppe, Einbauten und weitere Hindernisse.
-5. PDF-Grundrissimport, Hintergrund verschieben/drehen, Ausrichtung an längster Wand oder Fensterlicht.
+5. PDF-Grundrissimport, Hintergrund per Ziehen verschieben/drehen, Ausrichtung an längster Wand oder Fensterlicht. Hintergrundposition ist bereits numerisch editierbar.
 6. Direkte Drehgriffe und zusätzliche Maßbeschriftungen. Einfügen/Entfernen zusätzlicher Eckpunkte und waagerechte/senkrechte Ausrichtung per Shift sind bereits umgesetzt.
 7. Durchgehendes gemeinsames Raster über mehrere Räume und Türöffnungen; Raumverbindungen im Modell ergänzen.
 

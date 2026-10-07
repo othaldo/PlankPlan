@@ -1,12 +1,12 @@
 import polygonClipping from 'polygon-clipping';
 import type { MultiPolygon } from 'polygon-clipping';
 import { area, bounds, EPS, mod, polygonPoints, rectangle } from '../geometry/polygon';
-import { applyMaterialReuse, emptyLayout, fillPrepared, prepareRoom } from '../flooring/layout';
+import { allocateLayout, emptyLayout, fillPrepared, prepareRoom } from '../flooring/layout';
 import type { Layout } from '../flooring/layout';
 import type { Flooring, Room } from '../model/types';
 import { optimizeTransverse } from './transverse';
 import { allocateMaterial, initialMaterial } from '../flooring/material';
-import type { MaterialState, Requirement } from '../flooring/material';
+import type { MaterialContext, MaterialState, Requirement } from '../flooring/material';
 
 interface Span { minX: number; maxX: number }
 interface Candidate { origin: number; phase: number; spans: Span[]; joints: number[]; count: number; first: number; last: number; cutCount: number; requirements: Requirement[] }
@@ -46,6 +46,10 @@ function candidate(band: MultiPolygon, y: number, phase: number, row: number, f:
 }
 /** Beam search over real per-row cuts with hard end-piece and adjacent-joint constraints. */
 export function layoutAutomatic(room: Room, f: Flooring): Layout {
+  return planAutomatic(room, f).layout;
+}
+export function planAutomatic(room: Room, f: Flooring, initial: MaterialState = initialMaterial(), context?: MaterialContext) {
+  const failure = (warnings: string[]) => ({ layout: emptyLayout(room, warnings), inventory: initial });
   const prepared = prepareRoom(room, f);
   const firstWidth = room.layout.firstRowWidth;
   if (typeof firstWidth === 'number' && (!Number.isFinite(firstWidth) || firstWidth < .1 || firstWidth > 1000))
@@ -57,6 +61,8 @@ export function layoutAutomatic(room: Room, f: Flooring): Layout {
   const b = prepared.extent, originY = b.minY - offsetY;
   const rows = Math.ceil((b.maxY - originY - 1e-7) / f.width);
   const minimumJoint = f.minJointOffset ?? 300;
+  const uniqueIncoming = [...new Map(initial.offcuts.map(s => [`${s.edge}:${s.length.toFixed(2)}`, s])).values()].sort((a, b) => a.length - b.length);
+  const incomingCandidates = uniqueIncoming.length <= 32 ? uniqueIncoming : Array.from({ length: 32 }, (_, i) => uniqueIncoming[Math.floor(i * (uniqueIncoming.length - 1) / 31)]);
   let states: State[] = [];
   for (let row = 0; row < rows; row++) {
     const y = originY + row * f.width;
@@ -77,34 +83,35 @@ export function layoutAutomatic(room: Room, f: Flooring): Layout {
     }
     // Material-aware candidates include using an existing offcut at its full
     // usable length. Fugenversatz can require trimming it or saving it for later.
-    for (const state of states.slice(0, 8)) for (const stock of state.material.offcuts.slice(-8)) {
+    const stocks = states.length ? states.slice(0, 8).flatMap(state => state.material.offcuts.slice(-8)) : incomingCandidates;
+    for (const stock of stocks) {
       if (stock.edge === 'right') add(spans[0].minX + stock.length);
       else add(spans[spans.length - 1].maxX - stock.length);
     }
     const choices = [...phases].map(phase => candidate(band, y, phase, row, f)).filter((c): c is Candidate => !!c);
-    if (!choices.length) return emptyLayout(room, [`Reihe ${row + 1}: Keine Verlegung mit allen Teilstücken mindestens ${f.minEndPieceLength} mm gefunden. Raumkontur, Richtung oder Verlegeregel prüfen. Es werden keine zu kurzen Dielen eingeplant.`]);
+    if (!choices.length) return failure([`Reihe ${row + 1}: Keine Verlegung mit allen Teilstücken mindestens ${f.minEndPieceLength} mm gefunden. Raumkontur, Richtung oder Verlegeregel prüfen. Es werden keine zu kurzen Dielen eingeplant.`]);
     const next: State[] = [];
     for (const choice of choices) {
       if (!states.length) {
-        const material = allocateMaterial(choice.requirements, f, initialMaterial());
-        next.push({ candidate: choice, row, material, cost: material.newBoards * 100000 + choice.cutCount * 10 + f.length - choice.first }); continue;
+        const material = allocateMaterial(choice.requirements, f, initial, context);
+        next.push({ candidate: choice, row, material, cost: (material.newBoards - initial.newBoards) * 100000 + choice.cutCount * 10 + f.length - choice.first }); continue;
       }
       let best: State | undefined;
       for (const previous of states) {
         if (row === previous.row + 1 && !jointsCompatible(previous.candidate, choice, minimumJoint)) continue;
         const distance = mod(choice.phase - previous.candidate.phase - f.jointOffset, f.length);
-        const material = allocateMaterial(choice.requirements, f, previous.material);
+        const material = allocateMaterial(choice.requirements, f, previous.material, context);
         const cost = previous.cost + (material.newBoards - previous.material.newBoards) * 100000 + choice.cutCount * 10 + Math.min(distance, f.length - distance);
         if (!best || cost < best.cost) best = { candidate: choice, row, cost, previous, material };
       }
       if (best) next.push(best);
     }
-    if (!next.length) return emptyLayout(room, [`Reihe ${row + 1}: Keine Kombination mit mindestens ${f.minEndPieceLength} mm Stücklänge und ${minimumJoint} mm Fugenversatz gefunden. Bitte Raumrichtung oder Regeln prüfen. Es wird kein ungültiger Plan ausgegeben.`]);
+    if (!next.length) return failure([`Reihe ${row + 1}: Keine Kombination mit mindestens ${f.minEndPieceLength} mm Stücklänge und ${minimumJoint} mm Fugenversatz gefunden. Bitte Raumrichtung oder Regeln prüfen. Es wird kein ungültiger Plan ausgegeben.`]);
     states = next.sort((a, b) => a.cost - b.cost).slice(0, 32);
   }
   const origins = new Map<number, number>();
   for (let state: State | undefined = states[0]; state; state = state.previous) origins.set(state.row, state.candidate.origin);
   const layout = fillPrepared(prepared, f, { ...room.layout, offsetY }, origins);
-  if (!layout.feasible) return emptyLayout(room, ['Die abschließende Zuschnittprüfung hat ein zu kurzes Teilstück entdeckt. Es wird kein ungültiger Plan ausgegeben.']);
-  return applyMaterialReuse(layout, f);
+  if (!layout.feasible) return failure(['Die abschließende Zuschnittprüfung hat ein zu kurzes Teilstück entdeckt. Es wird kein ungültiger Plan ausgegeben.']);
+  return allocateLayout(layout, f, initial, context);
 }

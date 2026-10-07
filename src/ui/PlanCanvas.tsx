@@ -6,6 +6,7 @@ import type { Layout } from '../flooring/layout';
 import type { Floor, Point, Room } from '../model/types';
 import { Maximize, Minus, Plus } from 'lucide-react';
 import { alignVertex, snapRoomTranslation, snapToRooms } from '../geometry/snapping';
+import { materialSource } from '../flooring/material';
 
 export type Tool = 'select' | 'draw' | 'calibrate' | 'pan' | 'move-room';
 export function pathData(polygons: MultiPolygon) {
@@ -19,6 +20,15 @@ export function PlanCanvas({ floor, selectedId, layouts, tool, draft, setDraft, 
     onSelect: (id: string) => void; onRoom: (polygon: Point[]) => void; onPolygon: (id: string, polygon: Point[]) => void;
     onError: (message: string) => void; snap: number; snapRooms: boolean; showBoards: boolean }) {
   const svg = useRef<SVGSVGElement>(null);
+  const [canvasSize, setCanvasSize] = useState({ width: 800, height: 600 });
+  useEffect(() => {
+    const node = svg.current; if (!node) return;
+    const observer = new ResizeObserver(entries => {
+      const { width, height } = entries[0].contentRect;
+      if (width > 0 && height > 0) setCanvasSize({ width, height });
+    });
+    observer.observe(node); return () => observer.disconnect();
+  }, []);
   const [view, setView] = useState({ x: -450, y: -450, w: 7000, h: 5700 });
   const [cursor, setCursor] = useState<Point | null>(null);
   const drag = useRef<{ kind: 'vertex' | 'pan' | 'room'; id?: string; index?: number; point: Point; initial?: Point[]; view?: typeof view; current?: Point[] } | null>(null);
@@ -155,6 +165,7 @@ export function PlanCanvas({ floor, selectedId, layouts, tool, draft, setDraft, 
   }
   function roomPoints(room: Room) { return preview?.id === room.id ? preview.polygon : room.polygon; }
   const labelSize = view.w / 75, gridSize = view.w > 16000 ? 1000 : 500;
+  const worldPerPixel = Math.max(view.w / canvasSize.width, view.h / canvasSize.height);
   return <div className={`plan-canvas tool-${tool}`}>
     <svg ref={svg} role="img" aria-label="Interaktiver Verlegeplan" viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`}
       onPointerDown={click} onPointerMove={move} onPointerUp={release} onPointerCancel={() => { drag.current = null; lastVertexPointer.current = null; setPreview(null); setAlignment(null); setSnapTarget(null); }}
@@ -173,14 +184,14 @@ export function PlanCanvas({ floor, selectedId, layouts, tool, draft, setDraft, 
             fill={board.material?.reusedFrom ? '#bdd2ac' : board.cut ? (board.row % 2 ? '#d5ad76' : '#dfbc88') : (board.row % 2 ? '#eee0c5' : '#e6d3af')}
             stroke={board.material?.reusedFrom ? '#5f8650' : board.cut ? '#a47940' : '#b6a082'} strokeWidth="0.7" vectorEffect="non-scaling-stroke"
             onPointerDown={e => roomPointer(e, room)}>
-            <title>{`${room.name} · Reihe ${board.row + 1} · Diele ${board.column + 1}\n${board.cut ? 'Zuschnitt' : 'Ganze Diele'}: ${board.usedLength.toFixed(1)} × ${board.usedWidth.toFixed(1)} mm\nAusgangsdiele: ${board.material?.sourceBoardId ?? 'neu'} · ${board.source.length} × ${board.source.width} mm${board.material?.reusedFromPlacementId ? `\nWiederverwendeter Rest aus Reihe ${Number(board.material.reusedFromPlacementId.split(':')[0]) + 1}: ${board.material.stockLength.toFixed(1)} mm` : ''}`}</title>
+            <title>{`${room.name} · Reihe ${board.row + 1} · Diele ${board.column + 1}\n${board.cut ? 'Zuschnitt' : 'Ganze Diele'}: ${board.usedLength.toFixed(1)} × ${board.usedWidth.toFixed(1)} mm\nAusgangsdiele: ${board.material?.sourceBoardId ?? 'neu'} · ${board.source.length} × ${board.source.width} mm${board.material?.reusedFromPlacementId ? `\n${materialSource(board.material)}: ${board.material.stockLength.toFixed(1)} mm · ungedreht` : ''}`}</title>
           </path>)}
           <polygon points={pointsString(points)} fill="none" stroke={selected ? '#4b6546' : '#8b9588'} strokeDasharray={room.flooringEnabled === false ? '7 4' : undefined} strokeWidth={selected ? 2.5 : 1.5} vectorEffect="non-scaling-stroke" pointerEvents="none" />
           <text x={(b.minX + b.maxX) / 2} y={(b.minY + b.maxY) / 2} textAnchor="middle" fontSize={labelSize} className="room-label" pointerEvents="none">{room.name}</text>
           {room.flooringEnabled === false && <text x={(b.minX + b.maxX) / 2} y={(b.minY + b.maxY) / 2 + labelSize * 1.5} textAnchor="middle" fontSize={labelSize * .75} fill="#6a7780" pointerEvents="none">ohne Laminat</text>}
           {selected && tool === 'select' && !preview && points.map((point, index) => {
             const next = points[(index + 1) % points.length];
-            const midpoint = { x: (point.x + next.x) / 2, y: (point.y + next.y) / 2 }, radius = tolerance() * .8;
+            const midpoint = { x: (point.x + next.x) / 2, y: (point.y + next.y) / 2 }, radius = worldPerPixel * 8;
             return <g key={`insert-${index}`} role="button" tabIndex={0} aria-label={`Eckpunkt an Kante ${index + 1} einfügen`}
               className="insert-vertex" transform={`translate(${midpoint.x} ${midpoint.y})`}
               onPointerDown={e => { if (e.button !== 0) return; e.stopPropagation(); insertVertex(room, index, midpoint, e); }}
@@ -191,7 +202,7 @@ export function PlanCanvas({ floor, selectedId, layouts, tool, draft, setDraft, 
                 stroke="#4b6546" strokeWidth="1.5" vectorEffect="non-scaling-stroke" pointerEvents="none" />
             </g>;
           })}
-          {selected && tool === 'select' && points.map((point, index) => <circle key={index} cx={point.x} cy={point.y} r={view.w / 330}
+          {selected && tool === 'select' && points.map((point, index) => <circle key={index} cx={point.x} cy={point.y} r={worldPerPixel * 6}
             fill={activeVertex?.id === room.id && activeVertex.index === index ? '#4b6546' : 'white'} stroke="#4b6546" strokeWidth="2" vectorEffect="non-scaling-stroke" className="vertex"
             role="button" tabIndex={0} aria-label={`Eckpunkt ${index + 1}`} onFocus={() => setActiveVertex({ id: room.id, index })}
             onContextMenu={e => { e.preventDefault(); setActiveVertex({ id: room.id, index }); }}
