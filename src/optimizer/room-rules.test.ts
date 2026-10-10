@@ -53,7 +53,7 @@ describe('per-room laying rules',()=>{
     const loaded=parseProject(serializeProject({...p,materialPlan:{roomOrder:best.order,adaptive:best.adaptive,signature:planningSignature(p)}}));
     expect(loaded.floors[0].rooms.map(r=>r.rules)).toEqual([a.rules,b.rules]);
     expect([...planProject(loaded).layouts]).toEqual([...best.layouts]);
-  });
+  }, 20000); // Full optimization plus replay can exceed 5 seconds on shared CI runners.
   it('canonicalizes inherited values and invalidates saved optimization on changed rules',()=>{
     const r=room(),p=project([r]),signature=planningSignature(p);
     r.rules={minEndPieceLength:300,minJointOffset:400}; expect(planningSignature(p)).toBe(signature);
