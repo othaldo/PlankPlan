@@ -1,8 +1,14 @@
 import { optimizeTransverse } from './transverse';
 import { findFixedStagger } from './automatic';
+import { findBalancedLayout } from './balanced';
 import type { Flooring, Room } from '../model/types';
-self.onmessage = (event: MessageEvent<{ room: Room; flooring: Flooring; kind?: 'transverse' | 'fixed-start' }>) => {
+self.onmessage = (event: MessageEvent<{ room: Room; flooring: Flooring; kind?: 'transverse' | 'fixed-start' | 'balanced' }>) => {
   try {
+    if(event.data.kind==='balanced') {
+      const result=findBalancedLayout(event.data.room,event.data.flooring);
+      self.postMessage({settings:result.settings,jointOffset:result.jointOffset,candidates:result.candidates,packages:result.packages?.packages,
+        startLength:result.layout.rows[0]?.firstLength,newBoards:result.layout.newBoards}); return;
+    }
     if (event.data.kind === 'fixed-start') {
       const result = findFixedStagger(event.data.room, event.data.flooring);
       self.postMessage(result.fixedStagger === undefined ? { error: result.layout.warnings.join(' ') } : { fixedStagger: result.fixedStagger, candidates: result.candidates });

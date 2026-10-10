@@ -1,4 +1,34 @@
 import { expect, test } from '@playwright/test';
+test('finds and persists economical regular settings for just the selected room',async({page})=>{
+  await page.goto('/');
+  const r={id:'r',name:'Raum 1',polygon:[{x:0,y:0},{x:7760,y:0},{x:7760,y:4010},{x:0,y:4010}],layout:{direction:90,offsetX:0,offsetY:0,firstRowWidth:'full'},rules:{minEndPieceLength:200,minJointOffset:200,jointOffset:100}};
+  const other={...r,id:'other',name:'Anderer Raum',flooringEnabled:false};
+  const project={version:1,name:'Schön & sparsam',shareOffcuts:false,
+    flooring:{name:'Test',length:1285,width:194,thickness:8,expansionGap:10,minRowWidth:60,minEndPieceLength:300,jointOffset:400,minJointOffset:300,boardsPerPack:10,reservePercent:5},
+    floors:[{id:'f',name:'Etage',background:null,calibration:null,rooms:[r,other]}]};
+  await page.locator('input[type=file][accept=".json,application/json"]').setInputFiles({name:'schoen.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(project))});
+  const packsBefore=await page.getByTestId('project-packages').innerText();
+  await page.getByRole('button',{name:'Schön & sparsam planen',exact:true}).click();
+  await expect(page.locator('.notice')).toContainText('Schön & sparsam:',{timeout:30000});
+  await expect(page.getByLabel('Verlegemuster',{exact:true})).toHaveValue('custom');
+  await expect(page.getByLabel('Mindest-Endstück',{exact:true})).toHaveValue('200');
+  await expect(page.getByLabel('Mindest-Fugenversatz',{exact:true})).toHaveValue('200');
+  expect(await page.getByTestId('project-packages').innerText()).toBe(packsBefore);
+  const saved=()=>page.evaluate(()=>JSON.parse(localStorage.getItem('plankplan.project.v1')??'null'));
+  await expect.poll(async()=>(await saved())?.floors[0].rooms[0].layout.pattern).toBe('custom');
+  expect((await saved()).floors[0].rooms[1]).toEqual(other);
+  const settings=(await saved()).floors[0].rooms[0].layout;
+  await expect(page.getByLabel('Stirnfugenversatz je Reihe',{exact:true})).toHaveValue(String(settings.fixedStagger));
+  await page.getByRole('button',{name:'Rückgängig',exact:true}).click(); await expect(page.getByLabel('Verlegemuster',{exact:true})).toHaveValue('optimized');
+  await page.getByRole('button',{name:'Wiederholen',exact:true}).click(); await expect(page.getByLabel('Verlegemuster',{exact:true})).toHaveValue('custom');
+  await expect.poll(async()=>(await saved())?.floors[0].rooms[0].layout).toEqual(settings);
+  await page.reload(); await expect(page.getByLabel('Fester Versatz je Reihe',{exact:true})).toHaveValue(String(settings.fixedStagger));
+  await page.screenshot({path:'test-results/plankplan-balanced-room.png',fullPage:true});
+  const rule=page.getByLabel('Stirnfugenversatz je Reihe',{exact:true}),fixed=page.getByLabel('Fester Versatz je Reihe',{exact:true});
+  await rule.fill(String(settings.fixedStagger+1)); await rule.press('Enter'); await expect(fixed).toHaveValue(String(settings.fixedStagger+1));
+  await fixed.fill(String(settings.fixedStagger)); await fixed.press('Enter'); await expect(rule).toHaveValue(String(settings.fixedStagger));
+});
+
 test('toggles spacer suggestions independently of boards and updates them for room gap and disabled rooms',async({page})=>{
   await page.goto('/');
   const toggle=page.getByRole('checkbox',{name:'Abstandskeile anzeigen',exact:true}),markers=page.getByTestId('spacer-marker');

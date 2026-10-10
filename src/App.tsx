@@ -8,7 +8,7 @@ import { materialSource } from './flooring/material';
 import { parseProject, parseRooms } from './import/project';
 import { downloadProject, serializeProject } from './export/project';
 import { demoProject, layingRules, newFloor, PRESETS, roomFlooring } from './model/types';
-import type { Floor, Flooring, LayingRules, Point, Project, Room } from './model/types';
+import type { Floor, Flooring, LayoutSettings, LayingRules, Point, Project, Room } from './model/types';
 import { NumberField } from './ui/NumberField';
 import { PlanCanvas } from './ui/PlanCanvas';
 import { ProjectMaterial } from './ui/ProjectMaterial';
@@ -175,18 +175,26 @@ function App() {
   function updateRules(changes: Partial<LayingRules>) {
     if (!room) return false;
     const rules = { ...layingRules(roomMaterial), ...changes };
-    try { validateFlooring({ ...project.flooring, ...rules }); updateRoom(r => ({ ...r, rules })); return true; }
+    try { validateFlooring({ ...project.flooring, ...rules }); updateRoom(r => ({ ...r, rules,
+      layout:r.layout.pattern==='custom' && changes.jointOffset!==undefined?{...r.layout,fixedStagger:changes.jointOffset}:r.layout })); return true; }
     catch (e) { setNotice((e as Error).message); return false; }
   }
-  function optimize(kind: 'transverse' | 'fixed-start' = 'transverse') {
+  function optimize(kind: 'transverse' | 'fixed-start' | 'balanced' = 'transverse') {
     if (!room) return;
     worker.current?.terminate(); const next = new Worker(new URL('./optimizer/worker.ts', import.meta.url), { type: 'module' });
     worker.current = next; setOptimizing(true);
     const targetFloor = floor.id, targetRoom = room.id;
     const targetProject = project;
-    next.onmessage = (event: MessageEvent<{ offsetY?: number; fixedStagger?: number; candidates?: number; error?: string }>) => {
+    next.onmessage = (event: MessageEvent<{ offsetY?: number; fixedStagger?: number; settings?: LayoutSettings; jointOffset?: number; candidates?: number; packages?: number; startLength?: number; newBoards?: number; error?: string }>) => {
       next.terminate(); worker.current = null; setOptimizing(false);
       if (latestProject.current !== targetProject) { setNotice('Das Projekt wurde während der Suche geändert. Bitte die Suche erneut starten.'); return; }
+      if(kind==='balanced') {
+        if(event.data.error || !event.data.settings) {setNotice(event.data.error??'Kein passendes Muster gefunden.');return;}
+        const settings=event.data.settings;
+        setProject(p=>({...p,materialPlan:undefined,floors:p.floors.map(f=>f.id!==targetFloor?f:{...f,rooms:f.rooms.map(r=>r.id!==targetRoom?r:{...r,layout:settings,
+          rules:event.data.jointOffset!==undefined?{...r.rules,jointOffset:event.data.jointOffset}:r.rules})})}));
+        setNotice(`Schön & sparsam: ${event.data.packages!==undefined?`${event.data.packages} Pakete · `:''}${event.data.newBoards} neue Dielen · Start ${format(event.data.startLength!)} mm${settings.pattern==='custom'?` · Versatz ${format(settings.fixedStagger!)} mm`:''} · ${event.data.candidates} Varianten geprüft.`);return;
+      }
       if (kind === 'fixed-start') {
         setProject(p => ({ ...p, floors: p.floors.map(f => f.id !== targetFloor ? f : { ...f,
           rooms: f.rooms.map(r => r.id !== targetRoom ? r : { ...r, layout: { ...r.layout, mode: 'automatic', pattern: 'custom', startWithFullPlank: true,
@@ -367,7 +375,7 @@ function App() {
               <option value="optimized">Material sparen · freier Versatz</option><option value="half">Regelmäßig · Halbversatz</option><option value="third">Regelmäßig · Drittelversatz</option><option value="custom">Eigener fester Versatz</option>
             </select></label>
             {room.layout.pattern === 'custom' && <NumberField label="Fester Versatz je Reihe" value={room.layout.fixedStagger ?? roomMaterial.jointOffset} min={0} max={project.flooring.length - .1} step={.1}
-              onChange={fixedStagger => updateRoom(r => ({ ...r, layout: { ...r.layout, fixedStagger } }))} />}
+              onChange={fixedStagger => updateRules({jointOffset:fixedStagger})} />}
             <div className="help-row"><HelpInfo label="Verlegemuster">{room.layout.pattern === 'custom'
               ? 'Jede nächste Reihe verschiebt die Fugen um genau diesen Wert. Beim Erreichen einer Dielenlänge beginnt das Muster wieder von vorn. Auch die Paketoptimierung hält den Versatz ein.'
               : room.layout.pattern === 'half' || room.layout.pattern === 'third'
@@ -386,6 +394,8 @@ function App() {
             {typeof room.layout.firstRowWidth === 'number' && <NumberField label="Breite der ersten Reihe" value={Math.min(room.layout.firstRowWidth, project.flooring.width)} min={.1} max={project.flooring.width} step={.1}
               onChange={firstRowWidth => updateRoom(r => ({ ...r, layout: { ...r.layout, firstRowWidth } }))} />}
             <div className="help-row"><HelpInfo label="Erste Reihenbreite">{room.layout.firstRowWidth === undefined ? 'Die Automatik verteilt die Breite auf beide Randreihen.' : 'Deine erste Reihenbreite bleibt fest. Die letzte Reihe passt sich an; die Längsplanung folgt deinen Vorgaben oben.'}</HelpInfo></div>
+            <button className="primary full optimize-button" disabled={optimizing} onClick={()=>optimize('balanced')}><Sparkles size={16} />{optimizing?'Varianten werden geprüft …':'Schön & sparsam planen'}</button>
+            <div className="help-row"><HelpInfo label="Schön & sparsam">Sucht für diesen Raum passende Startlängen und regelmäßige Versätze sowie eine sparsame freie Verlegung. Deckungsgleiche Fugen werden ausgeschlossen. Unter den geprüften Lösungen gewinnt zuerst der kleinste Paketbedarf inklusive Reserve, dann das gleichmäßigere Fugenbild und danach der kleinere Dielenverbrauch. Richtung, Bewegungsfuge, Mindestlängen, erste Reihenbreite und eine angeforderte ganze Startdiele bleiben erhalten. Die gefundenen Einstellungen werden übernommen; Rückgängig setzt sie zurück. Beste gefundene Lösung, kein garantiertes globales Minimum.</HelpInfo></div>
           </>}
           {room.layout.mode !== 'manual' && <div className={layout?.feasible ? 'auto-status' : 'auto-status blocked'}><Sparkles size={16} /><div><strong>{layout?.feasible ? 'Automatisch geplant' : 'Keine zulässige Verlegung gefunden'}</strong>{!layout?.feasible && layout?.warnings[0] && <p>{layout.warnings[0]}</p>}</div><HelpInfo label="Automatische Planung">Mindeststücklänge: {roomMaterial.minEndPieceLength} mm. Mindestabstand benachbarter Fugen: {roomMaterial.minJointOffset ?? 300} mm.</HelpInfo></div>}
           <details className="manual-controls"><summary>Manuell anpassen (Experten)</summary><label className="toggle-field"><input type="checkbox" checked={room.layout.mode === 'manual'} onChange={e => updateRoom(r => ({ ...r, layout: { ...r.layout, mode: e.target.checked ? 'manual' : 'automatic' } }))} />Manuelle Rasterplanung aktivieren</label>
