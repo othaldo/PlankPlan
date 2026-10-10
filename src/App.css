@@ -32,6 +32,11 @@
 .edge-result{margin:14px 0;padding:12px}.quantities{margin-top:16px}.area-number{font-size:29px;margin:10px 0 12px}
 .room-dimensions{margin-top:10px;padding-top:10px}.package-result{padding:10px}.project-packages{padding:10px}
 .notice{pointer-events:none}.notice button{pointer-events:auto}
+.rectangle-actions{margin-top:9px}.rectangle-actions small{display:block;font-size:10px;margin-bottom:6px}.rectangle-actions button{font-size:10px}
+.wall-lengths{list-style:none;padding:0;max-height:240px}.wall-lengths .field{margin-top:7px}
+.wall-length-label{cursor:pointer;outline:none}.wall-length-label:hover rect,.wall-length-label:focus-visible rect{fill:#edf1e9;stroke:#4b6546;stroke-width:2}
+.wall-editor{position:absolute;top:12px;left:12px;width:min(225px,calc(100% - 24px));padding:12px;background:white;border:1px solid var(--line);border-radius:7px;box-shadow:0 3px 15px #0002;z-index:2}
+.wall-editor>div{display:flex;align-items:center;font-size:12px}.wall-editor>div>button{margin-left:auto;border:0;background:transparent;padding:3px 7px}.wall-editor .field{margin-top:6px}
 @media(min-width:951px){
   .app{height:100dvh;min-height:0;display:flex;flex-direction:column;overflow:hidden}
   .app-header{flex-shrink:0}

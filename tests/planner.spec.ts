@@ -1,7 +1,38 @@
 import { expect, test } from '@playwright/test';
+test('straightens a sketched room and edits exact wall lengths directly on the canvas', async ({ page }) => {
+  await page.goto('/');
+  const project={version:1,name:'Wandmaße',flooring:{name:'Test',length:1285,width:194,thickness:8,expansionGap:10,minRowWidth:60,minEndPieceLength:300,jointOffset:400,minJointOffset:300,boardsPerPack:10},
+    floors:[{id:'f',name:'Etage',background:null,calibration:null,rooms:[{id:'r',name:'Skizze',polygon:[{x:5320,y:3990},{x:10010,y:3990},{x:10003,y:10680},{x:5320,y:10670}],layout:{direction:0,offsetX:0,offsetY:0}}]}]};
+  await page.locator('input[type=file][accept=".json,application/json"]').setInputFiles({name:'wände.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(project))});
+  await expect(page.getByRole('heading',{name:'Skizze',exact:true})).toBeVisible();
+  await expect(page.getByText('Wände sind nicht waagerecht/senkrecht.',{exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Wände rechtwinklig ausrichten',exact:true}).click();
+  const points=()=>page.evaluate(()=>JSON.parse(localStorage.getItem('plankplan.project.v1')??'null')?.floors[0].rooms[0].polygon);
+  await expect.poll(points).toEqual([{x:5320,y:3990},{x:10010,y:3990},{x:10010,y:10680},{x:5320,y:10680}]);
+  for(let i=1;i<=4;i++) {
+    const label=(await page.getByRole('button',{name:`Länge von Wand ${i} ändern`,exact:true}).boundingBox())!;
+    const handle=(await page.getByRole('button',{name:`Eckpunkt an Kante ${i} einfügen`,exact:true}).boundingBox())!;
+    expect(label.x+label.width<=handle.x || handle.x+handle.width<=label.x || label.y+label.height<=handle.y || handle.y+handle.height<=label.y).toBe(true);
+  }
+  await page.getByRole('button',{name:'Länge von Wand 1 ändern',exact:true}).click();
+  const length=page.getByLabel('Wandlänge',{exact:true}); await expect(length).toHaveValue('4690');
+  await length.fill('4800'); await length.press('Enter');
+  await expect.poll(points).toEqual([{x:5320,y:3990},{x:10120,y:3990},{x:10120,y:10680},{x:5320,y:10680}]);
+  await expect(page.getByLabel('Breite des Raums',{exact:true})).toHaveValue('4800');
+  await page.screenshot({path:'test-results/plankplan-wall-dimensions.png',fullPage:true});
+  await page.getByRole('button',{name:'Wandbearbeitung schließen',exact:true}).click();
+  await page.getByRole('button',{name:'Länge von Wand 4 ändern',exact:true}).click();
+  await length.fill('6500'); await length.press('Enter');
+  await expect(page.getByLabel('Tiefe des Raums',{exact:true})).toHaveValue('6500');
+  await page.keyboard.press('Escape'); await expect(length).not.toBeVisible();
+  await page.getByRole('button',{name:'Rückgängig',exact:true}).click();
+  await expect(page.getByLabel('Tiefe des Raums',{exact:true})).toHaveValue('6690');
+  await expect.poll(points).toEqual([{x:5320,y:3990},{x:10120,y:3990},{x:10120,y:10680},{x:5320,y:10680}]);
+  await page.reload(); await expect(page.getByLabel('Breite des Raums',{exact:true})).toHaveValue('4800');
+});
 test('shows sidebar explanations on hover and keyboard focus without clipped tooltips', async ({ page }) => {
   await page.goto('/');
-  const explanation='Außenmaße waagerecht und senkrecht im Plan, in Millimetern.';
+  const explanation='Breite und Tiefe skalieren die Kontur, ohne schräge Wände zu begradigen.';
   await expect(page.locator('.setup-panel')).not.toContainText(explanation);
   const icon=page.getByRole('button',{name:'Info: Raummaße',exact:true});
   await icon.hover(); const tooltip=page.getByRole('tooltip');
