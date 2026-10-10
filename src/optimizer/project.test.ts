@@ -13,6 +13,32 @@ function project(): Project {
     floors: [floor('OG', room(1767, 'Langer Raum')), floor('EG', room(800, 'Kurzer Raum'))] };
 }
 describe('project material and package optimization', () => {
+  it('disables transfers across rooms and floors, persists the preference and replays isolated optimization', () => {
+    const p=project(), shared=optimizeProject(p);
+    p.materialPlan={roomOrder:shared.order,adaptive:shared.adaptive,signature:planningSignature(p)};
+    const previousSignature=planningSignature(p); p.shareOffcuts=false;
+    expect(planningSignature(p)).not.toBe(previousSignature);
+    for(const plan of [planProject(p),optimizeProject(p)]) {
+      expect(plan.valid).toBe(true); expect(plan.sharing).toBe(false); expect(plan.crossRoomReusedPieces).toBe(0);
+      expect(plan.newBoards).toBe(3); expect(plan.packages?.packages).toBe(2);
+      expect([...plan.layouts.values()].reduce((sum,l)=>sum+l.materialArea,0)).toBeCloseTo(plan.materialArea,5);
+      for(const [key,l] of plan.layouts) for(const b of l.boards) {
+        if(b.material?.reusedFromRoomKey) expect(b.material.reusedFromRoomKey).toBe(key);
+      }
+    }
+    const best=optimizeProject(p);
+    p.materialPlan={roomOrder:best.order,adaptive:best.adaptive,signature:planningSignature(p)};
+    const loaded=parseProject(serializeProject(p)); expect(loaded.shareOffcuts).toBe(false);
+    expect([...planProject(loaded).layouts]).toEqual([...best.layouts]);
+    loaded.shareOffcuts=true; expect(optimizeProject(loaded).crossRoomReusedPieces).toBe(1);
+  });
+  it('keeps click-compatible reuse within each room when transfers are disabled',()=>{
+    const p=project(); p.shareOffcuts=false;
+    p.floors[0].rooms[0].polygon=[{x:0,y:0},{x:1800,y:0},{x:1800,y:388},{x:0,y:388}];
+    p.floors[0].rooms[0].rules={minJointOffset:0,minEndPieceLength:100};
+    const best=optimizeProject(p); expect(best.valid).toBe(true); expect(best.reusedPieces).toBeGreaterThan(0);
+    expect(best.crossRoomReusedPieces).toBe(0);
+  });
   it('finds the useful first room and changes the next starter to save a whole package across floors', () => {
     const p = project(), before = planProject(p), best = optimizeProject(p);
     expect(before.newBoards).toBe(3); expect(before.packages?.packages).toBe(2);

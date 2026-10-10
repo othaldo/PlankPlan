@@ -138,3 +138,5 @@ Alternativ sind Punkte als `{ "x": 0, "y": 0 }` möglich. IDs werden neu vergebe
 Geplante Erweiterungen: modellierte Wiederverwendung von Schräg-/Längszuschnitten, gemeinsame Suche über Verlegerichtungen, exportierbarer Schnittplan, PDF-Grundrisse, Aussparungen, Bildtransformationen und durchgehende Verlegung über Türöffnungen. Das Einrasten verbindet Raumkoordinaten; es legt noch kein gemeinsames Dielenraster über mehrere Räume an. Eckpunkte lassen sich einfügen, verschieben, ausrichten und entfernen.
 
 Die vollständige übernommene Anforderung und die MVP-Abgrenzung stehen in `docs/SPECIFICATION.md`.
+
+Unter **Pakete gesamt → Ohne Reststücktausch** lässt sich der Austausch zwischen Räumen und Etagen abschalten. Jeder Raum verwendet dann nur seine eigenen Reststücke, auch bei der Paketoptimierung. Paketbedarf und Reserve bleiben projektweit berechnet. Die Einstellung wird im Projekt und im JSON gespeichert. Bestehende Projekte behalten ohne diese Einstellung den bisherigen Reststücktausch.

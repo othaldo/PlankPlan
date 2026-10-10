@@ -33,7 +33,7 @@ const floor = z.object({ id, name, background: background.nullable(), calibratio
     if (f.calibration && !f.background) ctx.addIssue({ code: 'custom', message: 'Eine Kalibrierung benötigt ein Hintergrundbild.' });
     if (new Set(f.rooms.map(r => r.id)).size !== f.rooms.length) ctx.addIssue({ code: 'custom', message: 'Raum-IDs müssen je Etage eindeutig sein.' });
   });
-export const projectSchema = z.object({ version: z.literal(1), name, flooring, floors: z.array(floor).min(1).max(50),
+export const projectSchema = z.object({ version: z.literal(1), name, flooring, floors: z.array(floor).min(1).max(50), shareOffcuts: z.boolean().optional(),
   materialPlan: z.object({ roomOrder: z.array(z.string().max(500)).max(5000), adaptive: z.boolean(), signature: z.string().max(2e6) }).optional() })
   .superRefine((p, ctx) => {
     if (new Set(p.floors.map(f => f.id)).size !== p.floors.length) ctx.addIssue({ code: 'custom', message: 'Etagen-IDs müssen eindeutig sein.' });

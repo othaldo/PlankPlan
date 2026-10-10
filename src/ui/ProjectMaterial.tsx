@@ -3,10 +3,11 @@ import type { Project } from '../model/types';
 import type { ProjectPlan } from '../optimizer/project';
 import { planningSignature, roomKey } from '../optimizer/project';
 import { HelpInfo } from './HelpInfo';
-export function ProjectMaterial({ project, plan, busy, progress, onOptimize, onCancel }:
-  { project: Project; plan: ProjectPlan; busy: boolean; progress: string; onOptimize: () => void; onCancel: () => void }) {
+export function ProjectMaterial({ project, plan, busy, progress, onOptimize, onCancel, onSharingChange }:
+  { project: Project; plan: ProjectPlan; busy: boolean; progress: string; onOptimize: () => void; onCancel: () => void; onSharingChange: (enabled: boolean) => void }) {
   const names = new Map(project.floors.flatMap(f => f.rooms.map(r => [roomKey(f.id, r.id), `${f.name} · ${r.name}`] as const)));
-  return <section className="section project-material"><h3><Sparkles size={16} />Pakete gesamt<HelpInfo label="Paketoptimierung">Gemeinsamer Reststückbestand für alle Räume. Die Suche variiert Reihenfolge und Startstücke und erhält deine Raumvorgaben. Beste gefundene Lösung, kein garantiertes globales Minimum. Reserve wird einmal für das gesamte Projekt berechnet.</HelpInfo></h3>
+  return <section className="section project-material"><h3><Sparkles size={16} />Pakete gesamt<HelpInfo label="Paketoptimierung">Die Suche optimiert Startstücke und bei aktiviertem Reststücktausch auch die Raumreihenfolge. Deine Raumvorgaben bleiben erhalten. Beste gefundene Lösung, kein garantiertes globales Minimum. Reserve wird einmal für das gesamte Projekt berechnet.</HelpInfo></h3>
+    <div className="help-row"><label className="toggle-field"><input type="checkbox" checked={project.shareOffcuts === false} onChange={e => onSharingChange(!e.target.checked)} />Ohne Reststücktausch</label><HelpInfo label="Reststücktausch">Aktiviert: Jeder Raum verwendet nur seine eigenen Reststücke. Es werden keine Teile zwischen Räumen oder Etagen getauscht. Wiederverwendung innerhalb eines Raums bleibt möglich; die Pakete werden weiterhin für das gesamte Projekt berechnet.</HelpInfo></div>
     <div className="project-packages" data-testid="project-packages">
       <strong>{plan.packages ? `${plan.packages.packages} ${plan.packages.packages === 1 ? 'Paket' : 'Pakete'} insgesamt` : plan.valid ? 'Paketinhalt eintragen' : 'Raumplanung zuerst prüfen'}</strong>
       <p>{plan.order.length} {plan.order.length === 1 ? 'Raum' : 'Räume'} · {project.flooring.reservePercent ?? 5} % Reserve</p>

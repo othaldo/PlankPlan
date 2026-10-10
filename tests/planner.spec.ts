@@ -395,6 +395,23 @@ test('optimizes project-wide packs with shared offcuts and reproduces sources af
   await page.reload(); await expect(page.getByTestId('project-new-boards')).toHaveText('2');
   await expect(page.getByTestId('cross-room-pieces')).toHaveText('1');
   await page.screenshot({ path:'test-results/plankplan-project-packages.png', fullPage:true });
+  const noExchange=page.getByRole('checkbox',{name:'Ohne Reststücktausch',exact:true});
+  await noExchange.check();
+  await expect(page.getByTestId('cross-room-pieces')).toHaveText('0');
+  await expect(page.getByTestId('project-packages')).toContainText('2 Pakete insgesamt');
+  expect((await page.locator('svg path > title').allTextContents()).join('\n')).not.toContain('Kurzer Raum (Erdgeschoss)');
+  await page.getByRole('button',{name:'Pakete optimieren',exact:true}).click();
+  await expect(page.locator('.notice')).toContainText('Beste gefundene Planung: 2 Pakete');
+  await expect(page.getByTestId('cross-room-pieces')).toHaveText('0');
+  const isolatedDownload=page.waitForEvent('download'); await page.getByRole('button',{name:'JSON speichern'}).click();
+  await input.setInputFiles((await (await isolatedDownload).path())!);
+  await expect(noExchange).toBeChecked(); await expect(page.getByTestId('cross-room-pieces')).toHaveText('0');
+  await expect.poll(()=>page.evaluate(()=>JSON.parse(localStorage.getItem('plankplan.project.v1')??'null')?.shareOffcuts)).toBe(false);
+  await page.reload(); await expect(noExchange).toBeChecked();
+  await expect(page.getByTestId('cross-room-pieces')).toHaveText('0');
+  await noExchange.uncheck(); await page.getByRole('button',{name:'Pakete optimieren',exact:true}).click();
+  await expect(page.getByTestId('cross-room-pieces')).toHaveText('1');
+  await expect(page.getByTestId('project-packages')).toContainText('1 Paket insgesamt');
 });
 test('snaps an entire room flush against an adjacent room wall without changing its size', async ({ page }) => {
   await page.goto('/'); await page.getByRole('button', { name: 'Etage hinzufügen' }).click();

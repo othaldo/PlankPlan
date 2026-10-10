@@ -13,7 +13,7 @@ export const planningSignature = (p: Project) => {
   return JSON.stringify([[f.length, f.width, f.thickness, f.expansionGap, f.minRowWidth, f.minEndPieceLength, f.jointOffset,
     f.minJointOffset ?? 300, f.boardsPerPack ?? null, f.reservePercent ?? 5, f.sawKerf ?? 3],
     p.floors.map(floor => [floor.id, floor.rooms.map(r => [r.id, r.polygon.map(point => [point.x, point.y]),
-      [r.layout.direction, r.layout.offsetX, r.layout.offsetY, r.layout.mode ?? 'automatic', r.layout.firstRowWidth ?? null, r.layout.pattern ?? 'optimized', r.layout.fixedStagger ?? null, r.layout.startWithFullPlank ?? false], Object.values(layingRules(roomFlooring(r, f))), r.flooringEnabled !== false])])]);
+      [r.layout.direction, r.layout.offsetX, r.layout.offsetY, r.layout.mode ?? 'automatic', r.layout.firstRowWidth ?? null, r.layout.pattern ?? 'optimized', r.layout.fixedStagger ?? null, r.layout.startWithFullPlank ?? false], Object.values(layingRules(roomFlooring(r, f))), r.flooringEnabled !== false])]), ...(p.shareOffcuts === false ? ['no-offcut-sharing'] : [])]);
 };
 interface Entry { key: string; room: Room; context: MaterialContext }
 interface Base { entries: Entry[]; layouts: Map<string, Layout>; errors: Map<string, string>; independentBoards: number; separatePackages: number | null }
@@ -100,6 +100,10 @@ export function planProject(p: Project): ProjectPlan {
   const independent = evaluate(p, base, order, false, false);
   if (!independent.valid) return independent;
   const adaptive = !!p.materialPlan?.adaptive && p.materialPlan.signature === planningSignature(p);
+  if (p.shareOffcuts === false) {
+    const refined = adaptive ? evaluate(p, base, order, true, false) : independent;
+    return compare(refined, independent) <= 0 ? refined : independent;
+  }
   const shared = evaluate(p, base, order, adaptive);
   return compare(shared, independent) <= 0 ? shared : independent;
 }
@@ -129,6 +133,12 @@ export function optimizeProject(p: Project, progress?: (completed: number, total
   const base = prepare(p), current = p.materialPlan?.roomOrder ?? [];
   const baseline = evaluate(p, base, current, false, false);
   if (!baseline.valid || !base.entries.length) return baseline;
+  if (p.shareOffcuts === false) {
+    // Start each room with its own stock; package rounding and reserve stay global.
+    const refined = evaluate(p, base, current, true, false, Date.now() + 45000);
+    progress?.(1, 1);
+    return { ...(compare(refined, baseline) <= 0 ? refined : baseline), candidates: 1 };
+  }
   const orders = candidateOrders(ordered(base, current).map(e => e.key));
   const fixed = orders.map((order, i) => { const result = evaluate(p, base, order); progress?.(i + 1, orders.length + Math.min(4, orders.length)); return result; });
   const saved = p.materialPlan?.adaptive && p.materialPlan.signature === planningSignature(p) ? evaluate(p, base, current, true) : baseline;

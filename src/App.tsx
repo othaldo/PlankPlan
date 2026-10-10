@@ -72,7 +72,7 @@ function App() {
   const floor = project.floors.find(f => f.id === floorId) ?? project.floors[0];
   const room = floor.rooms.find(r => r.id === roomId);
   const roomMaterial = room ? roomFlooring(room, project.flooring) : project.flooring;
-  const globalPlan = useMemo(() => optimizedProject?.floors === project.floors && optimizedProject.flooring === project.flooring && optimizedProject.materialPlan === project.materialPlan
+  const globalPlan = useMemo(() => optimizedProject?.floors === project.floors && optimizedProject.flooring === project.flooring && optimizedProject.materialPlan === project.materialPlan && project.materialPlan?.signature === planningSignature(project)
     ? optimizedProject.plan : planProject(project), [project, optimizedProject]);
   const computation = useMemo(() => ({
     layouts: new Map(floor.rooms.flatMap(r => { const l = globalPlan.layouts.get(roomKey(floor.id, r.id)); return l ? [[r.id, l] as const] : []; })),
@@ -110,7 +110,7 @@ function App() {
     worker.current?.terminate(); worker.current = null; setOptimizing(false);
   }, [project, floorId, roomId]);
   useEffect(() => () => worker.current?.terminate(), []);
-  useEffect(() => { projectWorker.current?.terminate(); projectWorker.current = null; setProjectBusy(false); }, [project.floors, project.flooring]);
+  useEffect(() => { projectWorker.current?.terminate(); projectWorker.current = null; setProjectBusy(false); }, [project.floors, project.flooring, project.shareOffcuts]);
   useEffect(() => () => projectWorker.current?.terminate(), []);
   useEffect(() => {
     function key(event: KeyboardEvent) {
@@ -321,6 +321,10 @@ function App() {
           {!project.flooring.boardsPerPack && <p className="hint warning-text">Paketinhalt fehlt.</p>}
         </section>
         <ProjectMaterial project={project} plan={globalPlan} busy={projectBusy} progress={projectProgress} onOptimize={optimizePackages}
+          onSharingChange={shareOffcuts => {
+            projectWorker.current?.terminate(); projectWorker.current = null; setProjectBusy(false); setOptimizedProject(null); setNotice('');
+            setProject(p => ({ ...p, shareOffcuts, materialPlan: undefined }));
+          }}
           onCancel={() => { projectWorker.current?.terminate(); projectWorker.current = null; setProjectBusy(false); setNotice('Optimierung abgebrochen. Die bisherige Planung bleibt erhalten.'); }} />
       </aside>
       <main className="plan-panel"><div className="plan-heading"><div><span className="eyebrow">VERLEGEPLAN</span><h1>{floor.name}</h1><p>{floor.rooms.length} {floor.rooms.length === 1 ? 'Raum' : 'Räume'}<span>·</span>{format(totalArea)} m² Raumfläche</p></div>
