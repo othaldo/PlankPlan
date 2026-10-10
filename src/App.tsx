@@ -7,8 +7,8 @@ import { packageQuantity } from './flooring/packages';
 import { materialSource } from './flooring/material';
 import { parseProject, parseRooms } from './import/project';
 import { downloadProject, serializeProject } from './export/project';
-import { demoProject, newFloor, PRESETS } from './model/types';
-import type { Floor, Flooring, Point, Project, Room } from './model/types';
+import { demoProject, layingRules, newFloor, PRESETS, roomFlooring } from './model/types';
+import type { Floor, Flooring, LayingRules, Point, Project, Room } from './model/types';
 import { NumberField } from './ui/NumberField';
 import { PlanCanvas } from './ui/PlanCanvas';
 import { ProjectMaterial } from './ui/ProjectMaterial';
@@ -70,6 +70,7 @@ function App() {
   const imageInput = useRef<HTMLInputElement>(null), jsonInput = useRef<HTMLInputElement>(null);
   const floor = project.floors.find(f => f.id === floorId) ?? project.floors[0];
   const room = floor.rooms.find(r => r.id === roomId);
+  const roomMaterial = room ? roomFlooring(room, project.flooring) : project.flooring;
   const globalPlan = useMemo(() => optimizedProject?.floors === project.floors && optimizedProject.flooring === project.flooring && optimizedProject.materialPlan === project.materialPlan
     ? optimizedProject.plan : planProject(project), [project, optimizedProject]);
   const computation = useMemo(() => ({
@@ -169,6 +170,12 @@ function App() {
     try { validateFlooring(flooring); setProject(p => ({ ...p, flooring })); }
     catch (e) { setNotice((e as Error).message); }
   }
+  function updateRules(changes: Partial<LayingRules>) {
+    if (!room) return false;
+    const rules = { ...layingRules(roomMaterial), ...changes };
+    try { validateFlooring({ ...project.flooring, ...rules }); updateRoom(r => ({ ...r, rules })); return true; }
+    catch (e) { setNotice((e as Error).message); return false; }
+  }
   function optimize(kind: 'transverse' | 'fixed-start' = 'transverse') {
     if (!room) return;
     worker.current?.terminate(); const next = new Worker(new URL('./optimizer/worker.ts', import.meta.url), { type: 'module' });
@@ -181,7 +188,7 @@ function App() {
       if (kind === 'fixed-start') {
         setProject(p => ({ ...p, floors: p.floors.map(f => f.id !== targetFloor ? f : { ...f,
           rooms: f.rooms.map(r => r.id !== targetRoom ? r : { ...r, layout: { ...r.layout, mode: 'automatic', pattern: 'custom', startWithFullPlank: true,
-            fixedStagger: event.data.fixedStagger ?? r.layout.fixedStagger ?? p.flooring.jointOffset } }) }) }));
+            fixedStagger: event.data.fixedStagger ?? r.layout.fixedStagger ?? roomFlooring(r, p.flooring).jointOffset } }) }) }));
         setNotice(event.data.error ?? `Passender Versatz gefunden: ${format(event.data.fixedStagger!)} mm · erste Startdiele in voller Länge. Mindeststücklänge und Fugenabstand sind eingehalten.`);
         return;
       }
@@ -193,7 +200,7 @@ function App() {
       }
     };
     next.onerror = () => { next.terminate(); worker.current = null; setOptimizing(false); setNotice('Die Optimierung konnte nicht abgeschlossen werden.'); };
-    next.postMessage({ room, flooring: project.flooring, kind });
+    next.postMessage({ room, flooring: roomMaterial, kind });
   }
   function optimizePackages() {
     projectWorker.current?.terminate();
@@ -301,22 +308,17 @@ function App() {
         </section>
         <section className="section material-section"><h3><span className="step-number">03</span>Dein Laminat</h3>
           <label className="field"><span>Formatvorlage</span><select aria-label="Laminatvorlage" value={PRESETS.findIndex(p => p.name === project.flooring.name && p.length === project.flooring.length && p.width === project.flooring.width)}
-            onChange={e => { const preset = PRESETS[Number(e.target.value)]; if (preset) setProject(p => ({ ...p, flooring: { ...preset } })); }}>
+            onChange={e => { const preset = PRESETS[Number(e.target.value)]; if (preset) setProject(p => ({ ...p, flooring: { ...preset, ...layingRules(p.flooring) } })); }}>
             <option value={-1}>Eigene Maße</option>{PRESETS.map((p, i) => <option value={i} key={p.name}>{p.name}</option>)}</select></label>
           <div className="material-swatch"><span /><div><strong>{project.flooring.name}</strong><small>{project.flooring.length} × {project.flooring.width} × {project.flooring.thickness} mm</small></div></div>
           <div className="field-pair"><NumberField label="Dielenlänge" value={project.flooring.length} min={100} max={5000} onChange={length => updateMaterial({ length, name: 'Eigene Maße' })} />
             <NumberField label="Dielenbreite" value={project.flooring.width} min={20} max={1000} onChange={width => updateMaterial({ width, name: 'Eigene Maße' })} /></div>
-          <div className="field-pair"><NumberField label="Stärke" value={project.flooring.thickness} min={1} max={100} onChange={thickness => updateMaterial({ thickness })} />
-            <NumberField label="Bewegungsfuge" value={project.flooring.expansionGap} max={100} onChange={expansionGap => updateMaterial({ expansionGap })} /></div>
+          <NumberField label="Stärke" value={project.flooring.thickness} min={1} max={100} onChange={thickness => updateMaterial({ thickness })} />
           <div className="field-pair"><NumberField label="Dielen pro Paket" value={project.flooring.boardsPerPack ?? 0} max={500} unit="Stk." onChange={boardsPerPack => updateMaterial({ boardsPerPack: boardsPerPack || undefined })} />
             <NumberField label="Zusätzliche Reserve" value={project.flooring.reservePercent ?? 5} max={100} unit="%" onChange={reservePercent => updateMaterial({ reservePercent })} /></div>
           <NumberField label="Sägeblattbreite / Schnittverlust" value={project.flooring.sawKerf ?? 3} max={10} step={.1} onChange={sawKerf => updateMaterial({ sawKerf })} />
           {!project.flooring.boardsPerPack && <p className="hint">Paketinhalt von der Verpackung eingeben, damit die Paketmenge berechnet werden kann.</p>}
-          <details><summary>Verlegeregeln</summary><NumberField label="Mindest-Reihenbreite" value={project.flooring.minRowWidth} min={1} max={project.flooring.width} onChange={minRowWidth => updateMaterial({ minRowWidth })} />
-            <NumberField label="Mindest-Endstück" value={project.flooring.minEndPieceLength} min={1} max={project.flooring.length} onChange={minEndPieceLength => updateMaterial({ minEndPieceLength })} />
-            <NumberField label="Stirnfugenversatz je Reihe" value={project.flooring.jointOffset} max={project.flooring.length - 1} onChange={jointOffset => updateMaterial({ jointOffset })} />
-            <NumberField label="Mindest-Fugenversatz" value={project.flooring.minJointOffset ?? 300} max={project.flooring.length / 2} onChange={minJointOffset => updateMaterial({ minJointOffset })} />
-            <p className="hint">Planungswerte. Bitte an die Verlegeanleitung deines Bodens anpassen.</p></details>
+          <p className="hint">Verlegeregeln stellst du rechts am ausgewählten Raum ein.</p>
         </section>
         <ProjectMaterial project={project} plan={globalPlan} busy={projectBusy} progress={projectProgress} onOptimize={optimizePackages}
           onCancel={() => { projectWorker.current?.terminate(); projectWorker.current = null; setProjectBusy(false); setNotice('Optimierung abgebrochen. Die bisherige Planung bleibt erhalten.'); }} />
@@ -343,7 +345,14 @@ function App() {
         <div className="plan-note"><Ruler size={19} /><p><strong>Jede Diele hat ihr echtes Maß.</strong> Der Plan zeigt die verbleibende Geometrie nach dem Zuschnitt. Die Bewegungsfuge bleibt an der Raumkontur frei.</p></div>
       </main>
       <aside className="results-panel"><span className="eyebrow">VERLEGUNG & ERGEBNIS</span><h2>{room?.name ?? 'Raum auswählen'}</h2>
-        {room && room.flooringEnabled !== false ? <><section className="layout-controls"><h3>Richtung & Planung</h3><div className="direction-buttons">{[0, 90].map(angle => <button className={room.layout.direction === angle ? 'active' : ''} key={angle} onClick={() => updateRoom(r => ({ ...r, layout: { ...r.layout, direction: angle } }))}>{angle === 0 ? '↔' : '↕'} {angle}°</button>)}</div>
+        {room && room.flooringEnabled !== false ? <><section className="layout-controls"><h3>Verlegeregeln für diesen Raum</h3>
+          <NumberField label="Bewegungsfuge" value={roomMaterial.expansionGap} max={100} onChange={expansionGap => updateRules({ expansionGap })} />
+          <NumberField label="Mindest-Reihenbreite" value={roomMaterial.minRowWidth} min={1} max={project.flooring.width} onChange={minRowWidth => updateRules({ minRowWidth })} />
+          <NumberField label="Mindest-Endstück" value={roomMaterial.minEndPieceLength} min={1} max={project.flooring.length} onChange={minEndPieceLength => updateRules({ minEndPieceLength })} />
+          <NumberField label="Stirnfugenversatz je Reihe" value={roomMaterial.jointOffset} max={project.flooring.length - 1} onChange={jointOffset => updateRules({ jointOffset })} />
+          <NumberField label="Mindest-Fugenversatz" value={roomMaterial.minJointOffset ?? 300} max={project.flooring.length / 2} onChange={minJointOffset => updateRules({ minJointOffset })} />
+          <p className="hint">Diese Werte gelten nur für {room.name}. Andere Räume behalten ihre Regeln. Bitte an die Verlegeanleitung deines Bodens anpassen.</p>
+          </section><section className="layout-controls"><h3>Richtung & Planung</h3><div className="direction-buttons">{[0, 90].map(angle => <button className={room.layout.direction === angle ? 'active' : ''} key={angle} onClick={() => updateRoom(r => ({ ...r, layout: { ...r.layout, direction: angle } }))}>{angle === 0 ? '↔' : '↕'} {angle}°</button>)}</div>
           <NumberField label="Eigener Winkel" value={room.layout.direction} min={-360} max={360} unit="°" onChange={direction => updateRoom(r => ({ ...r, layout: { ...r.layout, direction } }))} />
           <button className="primary full" disabled={optimizing} onClick={() => optimize('fixed-start')}>
             {optimizing ? 'Passender Versatz wird gesucht …' : 'Festen Versatz mit ganzer Startdiele einstellen'}
@@ -353,7 +362,7 @@ function App() {
               onChange={e => updateRoom(r => ({ ...r, layout: { ...r.layout, pattern: e.target.value as 'optimized' | 'half' | 'third' | 'custom' } }))}>
               <option value="optimized">Material sparen · freier Versatz</option><option value="half">Regelmäßig · Halbversatz</option><option value="third">Regelmäßig · Drittelversatz</option><option value="custom">Eigener fester Versatz</option>
             </select></label>
-            {room.layout.pattern === 'custom' && <NumberField label="Fester Versatz je Reihe" value={room.layout.fixedStagger ?? project.flooring.jointOffset} min={0} max={project.flooring.length - .1} step={.1}
+            {room.layout.pattern === 'custom' && <NumberField label="Fester Versatz je Reihe" value={room.layout.fixedStagger ?? roomMaterial.jointOffset} min={0} max={project.flooring.length - .1} step={.1}
               onChange={fixedStagger => updateRoom(r => ({ ...r, layout: { ...r.layout, fixedStagger } }))} />}
             <p className="hint">{room.layout.pattern === 'custom'
               ? 'Jede nächste Reihe verschiebt die Fugen um genau diesen Wert. Beim Erreichen einer Dielenlänge beginnt das Muster wieder von vorn. Auch die Paketoptimierung hält den Versatz ein.'
@@ -374,7 +383,7 @@ function App() {
               onChange={firstRowWidth => updateRoom(r => ({ ...r, layout: { ...r.layout, firstRowWidth } }))} />}
             <p className="hint">{room.layout.firstRowWidth === undefined ? 'Die Automatik verteilt die Breite auf beide Randreihen.' : 'Deine erste Reihenbreite bleibt fest. Die letzte Reihe passt sich an; die Längsplanung folgt deinen Vorgaben oben.'}</p>
           </>}
-          {room.layout.mode !== 'manual' && <div className={layout?.feasible ? 'auto-status' : 'auto-status blocked'}><Sparkles size={18} /><div><strong>{layout?.feasible ? 'Automatisch geplant' : 'Keine zulässige Verlegung gefunden'}</strong><p>{!layout?.feasible && layout?.warnings[0] ? layout.warnings[0] : <>Startstücke je Reihe werden so gewählt, dass alle Teilstücke mindestens {project.flooring.minEndPieceLength} mm lang sind und benachbarte Fugen mindestens {project.flooring.minJointOffset ?? 300} mm Abstand haben.</>}</p></div></div>}
+          {room.layout.mode !== 'manual' && <div className={layout?.feasible ? 'auto-status' : 'auto-status blocked'}><Sparkles size={18} /><div><strong>{layout?.feasible ? 'Automatisch geplant' : 'Keine zulässige Verlegung gefunden'}</strong><p>{!layout?.feasible && layout?.warnings[0] ? layout.warnings[0] : <>Startstücke je Reihe werden so gewählt, dass alle Teilstücke mindestens {roomMaterial.minEndPieceLength} mm lang sind und benachbarte Fugen mindestens {roomMaterial.minJointOffset ?? 300} mm Abstand haben.</>}</p></div></div>}
           <details className="manual-controls"><summary>Manuell anpassen (Experten)</summary><label className="toggle-field"><input type="checkbox" checked={room.layout.mode === 'manual'} onChange={e => updateRoom(r => ({ ...r, layout: { ...r.layout, mode: e.target.checked ? 'manual' : 'automatic' } }))} />Manuelle Rasterplanung aktivieren</label>
           {room.layout.mode === 'manual' && <>
           <label className="range-field"><span>Quer-Offset <b>{format(room.layout.offsetY)} mm</b></span><input aria-label="Quer-Offset" type="range" min="0" max={project.flooring.width - .1} step=".1" value={room.layout.offsetY}
@@ -385,9 +394,9 @@ function App() {
           <p className="hint">Hier sind die Mindestlängen nicht automatisch gelöst. Zur automatischen Planung die manuelle Rasterplanung ausschalten.</p></>}
           </details></section>
           {computation.errors.has(room.id) && <div className="warning-card"><TriangleAlert size={18} /><p>{computation.errors.get(room.id)}</p></div>}
-          {layout && <>{layout.feasible && <><section className="edge-result"><h3>Deine Randreihen</h3><div className="edge-pair"><div className={layout.firstRowWidth < project.flooring.minRowWidth - .01 ? 'too-narrow' : ''}><span>Erste Reihe</span><strong>{format(layout.firstRowWidth)}<small>mm</small></strong></div>
-            <div className={layout.lastRowWidth < project.flooring.minRowWidth - .01 ? 'too-narrow' : ''}><span>Letzte Reihe</span><strong>{format(layout.lastRowWidth)}<small>mm</small></strong></div></div>
-            <p>{Math.min(layout.firstRowWidth, layout.lastRowWidth) < project.flooring.minRowWidth - .01 ? <TriangleAlert size={13} /> : <Check size={13} />}Ziel: mindestens {project.flooring.minRowWidth} mm</p></section>
+          {layout && <>{layout.feasible && <><section className="edge-result"><h3>Deine Randreihen</h3><div className="edge-pair"><div className={layout.firstRowWidth < roomMaterial.minRowWidth - .01 ? 'too-narrow' : ''}><span>Erste Reihe</span><strong>{format(layout.firstRowWidth)}<small>mm</small></strong></div>
+            <div className={layout.lastRowWidth < roomMaterial.minRowWidth - .01 ? 'too-narrow' : ''}><span>Letzte Reihe</span><strong>{format(layout.lastRowWidth)}<small>mm</small></strong></div></div>
+            <p>{Math.min(layout.firstRowWidth, layout.lastRowWidth) < roomMaterial.minRowWidth - .01 ? <TriangleAlert size={13} /> : <Check size={13} />}Ziel: mindestens {roomMaterial.minRowWidth} mm</p></section>
             <section className="quantities"><h3>Material im Überblick</h3><div className="area-number">{format(layout.coveredArea / 1e6, 2)}<small>m²</small><span>verlegte Fläche</span></div>
               <dl><div><dt>Raumfläche</dt><dd>{format(layout.roomArea / 1e6, 2)} m²</dd></div><div><dt>Ganze Dielen</dt><dd>{layout.fullBoards}</dd></div><div><dt>Dielen mit Zuschnitt</dt><dd>{layout.cutBoards}</dd></div>
                 <div><dt>Reststücke wiederverwendet</dt><dd data-testid="reused-pieces">{layout.reusedPieces}</dd></div>

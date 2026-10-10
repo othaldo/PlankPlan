@@ -4,6 +4,7 @@ import { initialMaterial } from '../flooring/material';
 import type { MaterialContext, MaterialState } from '../flooring/material';
 import { packageQuantity } from '../flooring/packages';
 import type { Project, Room } from '../model/types';
+import { layingRules, roomFlooring } from '../model/types';
 import { planAutomatic } from './automatic';
 
 export const roomKey = (floorId: string, roomId: string) => JSON.stringify([floorId, roomId]);
@@ -12,7 +13,7 @@ export const planningSignature = (p: Project) => {
   return JSON.stringify([[f.length, f.width, f.thickness, f.expansionGap, f.minRowWidth, f.minEndPieceLength, f.jointOffset,
     f.minJointOffset ?? 300, f.boardsPerPack ?? null, f.reservePercent ?? 5, f.sawKerf ?? 3],
     p.floors.map(floor => [floor.id, floor.rooms.map(r => [r.id, r.polygon.map(point => [point.x, point.y]),
-      [r.layout.direction, r.layout.offsetX, r.layout.offsetY, r.layout.mode ?? 'automatic', r.layout.firstRowWidth ?? null, r.layout.pattern ?? 'optimized', r.layout.fixedStagger ?? null, r.layout.startWithFullPlank ?? false], r.flooringEnabled !== false])])]);
+      [r.layout.direction, r.layout.offsetX, r.layout.offsetY, r.layout.mode ?? 'automatic', r.layout.firstRowWidth ?? null, r.layout.pattern ?? 'optimized', r.layout.fixedStagger ?? null, r.layout.startWithFullPlank ?? false], Object.values(layingRules(roomFlooring(r, f))), r.flooringEnabled !== false])])]);
 };
 interface Entry { key: string; room: Room; context: MaterialContext }
 interface Base { entries: Entry[]; layouts: Map<string, Layout>; errors: Map<string, string>; independentBoards: number; separatePackages: number | null }
@@ -25,10 +26,12 @@ export interface ProjectPlan {
 }
 function prepare(p: Project): Base {
   const entries: Entry[] = [], layouts = new Map<string, Layout>(), errors = new Map<string, string>();
+  const minimumLengths = p.floors.flatMap(f => f.rooms.filter(r => r.flooringEnabled !== false).map(r => roomFlooring(r, p.flooring).minEndPieceLength));
+  const minReusableLength = minimumLengths.length ? Math.min(...minimumLengths) : p.flooring.minEndPieceLength;
   let independentBoards = 0, separatePackages: number | null = p.flooring.boardsPerPack ? 0 : null;
   for (const floor of p.floors) for (const room of floor.rooms) {
     const key = roomKey(floor.id, room.id);
-    if (room.flooringEnabled !== false) entries.push({ key, room, context: { roomKey: key, roomName: room.name, floorName: floor.name } });
+    if (room.flooringEnabled !== false) entries.push({ key, room, context: { roomKey: key, roomName: room.name, floorName: floor.name, minReusableLength } });
     try {
       const layout = layoutRoom(room, p.flooring); layouts.set(key, layout);
       independentBoards += layout.newBoards;
@@ -54,8 +57,8 @@ function evaluate(p: Project, base: Base, requested: string[], adaptive = false,
     const incoming = sharing ? inventory : { newBoards: inventory.newBoards, offcuts: [] };
     try {
       const result = adaptive && entry.room.layout.mode !== 'manual'
-        ? planAutomatic(entry.room, p.flooring, incoming, entry.context)
-        : allocateLayout(original, p.flooring, incoming, entry.context);
+        ? planAutomatic(entry.room, roomFlooring(entry.room, p.flooring), incoming, entry.context)
+        : allocateLayout(original, roomFlooring(entry.room, p.flooring), incoming, entry.context);
       if (!result.layout.feasible) { valid = false; continue; }
       layouts.set(entry.key, result.layout);
       inventory = sharing ? result.inventory : { newBoards: result.inventory.newBoards, offcuts: [...inventory.offcuts, ...result.inventory.offcuts] };

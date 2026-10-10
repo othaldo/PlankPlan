@@ -1,4 +1,35 @@
 import { expect, test } from '@playwright/test';
+test('edits laying rules per room and preserves them through package optimization and JSON', async ({ page }) => {
+  await page.goto('/');
+  const project={version:1,name:'Raumregeln',flooring:{name:'Test',length:1285,width:194,thickness:8,expansionGap:10,minRowWidth:60,minEndPieceLength:300,jointOffset:400,minJointOffset:400,boardsPerPack:10,reservePercent:0},
+    floors:[{id:'f',name:'Etage',background:null,calibration:null,rooms:[
+      {id:'a',name:'Raum A',polygon:[{x:0,y:0},{x:4010,y:0},{x:4010,y:2348},{x:0,y:2348}],layout:{direction:0,offsetX:0,offsetY:0,firstRowWidth:'full',pattern:'custom',fixedStagger:400,startWithFullPlank:true}},
+      {id:'b',name:'Raum B',polygon:[{x:5000,y:0},{x:9010,y:0},{x:9010,y:2348},{x:5000,y:2348}],layout:{direction:0,offsetX:0,offsetY:0}}]}]};
+  const input=page.locator('input[type=file][accept=".json,application/json"]');
+  await input.setInputFiles({name:'regeln.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(project))});
+  await expect(page.getByRole('heading',{name:'Raum A',exact:true})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'Verlegeregeln für diesen Raum'})).toBeVisible();
+  const field=page.getByLabel('Mindest-Endstück',{exact:true});
+  await expect(field).toHaveValue('300'); await field.fill('100'); await field.press('Enter');
+  await expect(page.getByText('Automatisch geplant',{exact:true})).toBeVisible();
+  await page.locator('.room-item').filter({hasText:'Raum B'}).click();
+  await expect(field).toHaveValue('300');
+  const gap=page.getByLabel('Bewegungsfuge',{exact:true}); await gap.fill('15'); await gap.press('Enter');
+  const joint=page.getByLabel('Mindest-Fugenversatz',{exact:true}); await joint.fill('500'); await joint.press('Enter');
+  await page.locator('.room-item').filter({hasText:'Raum A'}).click();
+  await expect(field).toHaveValue('100'); await expect(gap).toHaveValue('10'); await expect(joint).toHaveValue('400');
+  await page.getByRole('button',{name:'Pakete optimieren',exact:true}).click();
+  await expect(page.locator('.notice')).toContainText('Beste gefundene Planung',{timeout:30000});
+  await expect.poll(()=>page.evaluate(()=>{
+    const p=JSON.parse(localStorage.getItem('plankplan.project.v1')??'null');
+    return [p?.floors[0].rooms[0].rules?.minEndPieceLength,p?.floors[0].rooms[1].rules?.expansionGap,p?.flooring.minEndPieceLength];
+  })).toEqual([100,15,300]);
+  const downloading=page.waitForEvent('download'); await page.getByRole('button',{name:'JSON speichern',exact:true}).click();
+  await input.setInputFiles((await (await downloading).path())!); await expect(page.locator('.notice')).toContainText('Projekt einschließlich');
+  await page.reload(); await expect(field).toHaveValue('100');
+  await page.locator('.room-item').filter({hasText:'Raum B'}).click();
+  await expect(field).toHaveValue('300'); await expect(gap).toHaveValue('15'); await expect(joint).toHaveValue('500');
+});
 test('finds a working full-start stagger without guessing and explains an impossible first row', async ({ page }) => {
   await page.goto('/');
   const project={version:1,name:'Startsuche',flooring:{name:'Test',length:1285,width:194,thickness:8,expansionGap:10,minRowWidth:60,minEndPieceLength:100,jointOffset:400,minJointOffset:400,boardsPerPack:10,reservePercent:0},

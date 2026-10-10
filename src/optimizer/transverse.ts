@@ -2,6 +2,7 @@ import { mod } from '../geometry/polygon';
 import { fillPrepared, prepareRoom } from '../flooring/layout';
 import type { Layout } from '../flooring/layout';
 import type { Flooring, Room } from '../model/types';
+import { roomFlooring } from '../model/types';
 
 export function scoreLayout(layout: Layout, f: Flooring): number {
   const narrow = layout.rows.flatMap(row => row.fragmentWidths).reduce((a, w) =>
@@ -11,6 +12,7 @@ export function scoreLayout(layout: Layout, f: Flooring): number {
 }
 /** Finite candidate search plus 0.25 mm refinement; direction and longitudinal offset stay fixed. */
 export function optimizeTransverse(room: Room, f: Flooring): { offsetY: number; layout: Layout; candidates: number } {
+  f = roomFlooring(room, f);
   const prepared = prepareRoom(room, f);
   const candidates = new Set<number>([mod(room.layout.offsetY, f.width), 0]);
   const remainder = mod(prepared.extent.maxY - prepared.extent.minY, f.width);

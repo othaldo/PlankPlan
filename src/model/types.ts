@@ -5,7 +5,12 @@ export interface Flooring {
   minJointOffset?: number; boardsPerPack?: number; reservePercent?: number; sawKerf?: number;
 }
 export interface LayoutSettings { direction: number; offsetX: number; offsetY: number; mode?: 'automatic' | 'manual'; firstRowWidth?: number | 'full'; pattern?: 'optimized' | 'half' | 'third' | 'custom'; fixedStagger?: number; startWithFullPlank?: boolean }
-export interface Room { id: string; name: string; polygon: Point[]; layout: LayoutSettings; flooringEnabled?: boolean }
+export interface LayingRules { expansionGap: number; minRowWidth: number; minEndPieceLength: number; jointOffset: number; minJointOffset: number }
+export interface Room { id: string; name: string; polygon: Point[]; layout: LayoutSettings; rules?: Partial<LayingRules>; flooringEnabled?: boolean }
+export function layingRules(f: Flooring): LayingRules {
+  return { expansionGap: f.expansionGap, minRowWidth: f.minRowWidth, minEndPieceLength: f.minEndPieceLength, jointOffset: f.jointOffset, minJointOffset: f.minJointOffset ?? 300 };
+}
+export function roomFlooring(room: Room, flooring: Flooring): Flooring { return { ...flooring, ...layingRules(flooring), ...room.rules }; }
 export interface Background {
   name: string; dataUrl: string; widthPx: number; heightPx: number; opacity: number; origin: Point;
 }

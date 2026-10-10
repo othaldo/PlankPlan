@@ -4,6 +4,7 @@ import { area, bounds, EPS, mod, polygonPoints, rectangle } from '../geometry/po
 import { allocateLayout, emptyLayout, fillPrepared, prepareRoom } from '../flooring/layout';
 import type { Layout, PreparedRoom } from '../flooring/layout';
 import type { Flooring, Room } from '../model/types';
+import { roomFlooring } from '../model/types';
 import { optimizeTransverse } from './transverse';
 import { allocateMaterial, initialMaterial } from '../flooring/material';
 import type { MaterialContext, MaterialState, Requirement } from '../flooring/material';
@@ -124,6 +125,7 @@ export function layoutAutomatic(room: Room, f: Flooring): Layout {
 }
 /** Find a feasible constant stagger with a full starter; never relax construction rules. */
 export function findFixedStagger(room: Room, f: Flooring): { fixedStagger?: number; layout: Layout; candidates: number } {
+  f = roomFlooring(room, f);
   const requested = { ...room, layout: { ...room.layout, mode: 'automatic' as const, pattern: 'custom' as const, startWithFullPlank: true } };
   const steps = [...new Set([room.layout.fixedStagger ?? f.jointOffset, f.length / 2, f.length / 3, f.length / 4,
     ...Array.from({ length: 63 }, (_, i) => Math.round((i + 1) * f.length / 64 * 10) / 10)])].filter(n => n >= 0 && n < f.length);
@@ -138,6 +140,7 @@ export function findFixedStagger(room: Room, f: Flooring): { fixedStagger?: numb
   return { layout: result ?? emptyLayout(room, ['Kein passender fester Versatz gefunden.']), candidates };
 }
 export function planAutomatic(room: Room, f: Flooring, initial: MaterialState = initialMaterial(), context?: MaterialContext) {
+  f = roomFlooring(room, f);
   const failure = (warnings: string[]) => ({ layout: emptyLayout(room, warnings), inventory: initial });
   const prepared = prepareRoom(room, f);
   const firstWidth = room.layout.firstRowWidth;

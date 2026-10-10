@@ -3,6 +3,7 @@ import { validatePolygon } from '../geometry/polygon';
 import { calibrate } from '../geometry/calibration';
 import { validateFlooring } from '../flooring/layout';
 import type { Project, Room } from '../model/types';
+import { roomFlooring } from '../model/types';
 
 const finite = z.number().finite();
 const point = z.object({ x: finite.min(-1e6).max(1e6), y: finite.min(-1e6).max(1e6) });
@@ -12,7 +13,8 @@ const polygon = z.array(point).min(3).max(512).superRefine((points, ctx) => {
   const error = validatePolygon(points); if (error) ctx.addIssue({ code: 'custom', message: error });
 });
 const layout = z.object({ direction: finite.min(-360).max(360), offsetX: finite.min(-1e6).max(1e6), offsetY: finite.min(-1e6).max(1e6), mode: z.enum(['automatic', 'manual']).optional(), firstRowWidth: z.union([finite.min(.1).max(1000), z.literal('full')]).optional(), pattern: z.enum(['optimized', 'half', 'third', 'custom']).optional(), fixedStagger: finite.min(0).max(5000).optional(), startWithFullPlank: z.boolean().optional() });
-const room = z.object({ id, name, polygon, layout, flooringEnabled: z.boolean().optional() });
+const rules = z.object({ expansionGap: finite.min(0).max(100).optional(), minRowWidth: finite.positive().max(1000).optional(), minEndPieceLength: finite.positive().max(5000).optional(), jointOffset: finite.min(0).max(5000).optional(), minJointOffset: finite.min(0).max(2500).optional() });
+const room = z.object({ id, name, polygon, layout, rules: rules.optional(), flooringEnabled: z.boolean().optional() });
 const flooring = z.object({ name, length: finite, width: finite, thickness: finite,
   expansionGap: finite, minRowWidth: finite, minEndPieceLength: finite, jointOffset: finite,
   minJointOffset: finite.min(0).optional(), boardsPerPack: finite.int().min(1).max(500).optional(), reservePercent: finite.min(0).max(100).optional(), sawKerf: finite.min(0).max(10).optional() }).superRefine((f, ctx) => {
@@ -35,6 +37,10 @@ export const projectSchema = z.object({ version: z.literal(1), name, flooring, f
   materialPlan: z.object({ roomOrder: z.array(z.string().max(500)).max(5000), adaptive: z.boolean(), signature: z.string().max(2e6) }).optional() })
   .superRefine((p, ctx) => {
     if (new Set(p.floors.map(f => f.id)).size !== p.floors.length) ctx.addIssue({ code: 'custom', message: 'Etagen-IDs müssen eindeutig sein.' });
+    p.floors.forEach((floor, fi) => floor.rooms.forEach((room, ri) => {
+      try { validateFlooring(roomFlooring(room, p.flooring)); }
+      catch (e) { ctx.addIssue({ code: 'custom', path: ['floors', fi, 'rooms', ri, 'rules'], message: (e as Error).message }); }
+    }));
   });
 export function parseProject(text: string): Project {
   if (text.length > 24e6) throw new Error('Das Projekt ist größer als 24 MB.');
@@ -48,7 +54,7 @@ export function parseProject(text: string): Project {
   return result.data;
 }
 const importPoint = z.union([point, z.tuple([finite, finite]).transform(([x, y]) => ({ x, y }))]);
-const roomsSchema = z.object({ rooms: z.array(z.object({ name, polygon: z.array(importPoint).min(3).max(512), layout: layout.optional(), flooringEnabled: z.boolean().optional() })).min(1).max(100) });
+const roomsSchema = z.object({ rooms: z.array(z.object({ name, polygon: z.array(importPoint).min(3).max(512), layout: layout.optional(), rules: rules.optional(), flooringEnabled: z.boolean().optional() })).min(1).max(100) });
 export function parseRooms(text: string): Room[] {
   const result = roomsSchema.safeParse(JSON.parse(text));
   if (!result.success) throw new Error('Erwartet wird { "rooms": [{ "name": "…", "polygon": [[x, y], …] }] } mit Millimeter-Koordinaten.');

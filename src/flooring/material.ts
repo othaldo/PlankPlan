@@ -1,7 +1,7 @@
 import type { Flooring } from '../model/types';
 
 export interface Requirement { id: string; length: number; width: number; area: number; rectangular: boolean; role: 'start' | 'end' | 'other' }
-export interface MaterialContext { roomKey: string; roomName: string; floorName: string }
+export interface MaterialContext { roomKey: string; roomName: string; floorName: string; minReusableLength?: number }
 export interface Offcut { id: string; length: number; width: number; edge: 'left' | 'right'; sourceBoardId: string; sourcePlacementId: string; sourceRoomKey?: string; sourceRoomName?: string; sourceFloorName?: string; cutRole?: 'start' | 'end' }
 export interface Allocation { placementId: string; sourceBoardId: string; reusedFrom?: string; reusedFromPlacementId?: string; stockLength: number; cutLoss: number; reusedFromRoomKey?: string; reusedFromRoomName?: string; reusedFromFloorName?: string; reusedFromCutRole?: 'start' | 'end' }
 export interface MaterialState { offcuts: Offcut[]; newBoards: number }
@@ -38,7 +38,8 @@ export function allocateMaterial(requirements: Requirement[], f: Flooring, previ
     // one-ended stock loses its only factory end to the installed piece; its
     // second remainder has two sawn short ends and cannot be reused again.
     const leftover = stockLength - item.length - cutLoss;
-    if (eligible && !stock && leftover >= f.minEndPieceLength - .01) offcuts.push({
+    // A remainder too short for its producer can still fit a different room's rules.
+    if (eligible && !stock && leftover >= (context?.minReusableLength ?? f.minEndPieceLength) - .01) offcuts.push({
       id: `R-${context ? `${context.roomKey}/` : ''}${item.id}`, length: leftover, width: f.width, edge: edge === 'left' ? 'right' : 'left',
       sourceBoardId, sourcePlacementId: item.id, sourceRoomKey: context?.roomKey, sourceRoomName: context?.roomName, sourceFloorName: context?.floorName,
       cutRole: item.role as 'start' | 'end',

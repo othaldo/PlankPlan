@@ -2,6 +2,7 @@ import polygonClipping from 'polygon-clipping';
 import type { MultiPolygon } from 'polygon-clipping';
 import { area, bounds, EPS, inset, mod, polygonPoints, rectangle, transform } from '../geometry/polygon';
 import type { Flooring, LayoutSettings, Room } from '../model/types';
+import { roomFlooring } from '../model/types';
 import { layoutAutomatic } from '../optimizer/automatic';
 import { allocateMaterial, initialMaterial } from './material';
 import type { Allocation, MaterialContext, MaterialState, Offcut, Requirement } from './material';
@@ -32,6 +33,7 @@ export function validateFlooring(f: Flooring) {
     throw new Error('Ungültige Dielenmaße oder Verlegeregeln. Mindestmaße dürfen das Dielenmaß nicht überschreiten.');
 }
 export function prepareRoom(room: Room, flooring: Flooring): PreparedRoom {
+  flooring = roomFlooring(room, flooring);
   validateFlooring(flooring);
   if (![room.layout.direction, room.layout.offsetX, room.layout.offsetY].every(Number.isFinite)) throw new Error('Ungültige Verlegeparameter.');
   const inner = inset(room.polygon, flooring.expansionGap);
@@ -127,6 +129,7 @@ export function emptyLayout(room: Room, warnings: string[] = []): Layout {
 const autoCache = new Map<string, Layout>();
 export function layoutRoom(room: Room, flooring: Flooring): Layout {
   if (room.flooringEnabled === false) return emptyLayout(room);
+  flooring = roomFlooring(room, flooring);
   if (room.layout.mode === 'manual') return fillPrepared(prepareRoom(room, flooring), flooring, room.layout);
   const key = JSON.stringify([room.polygon, room.layout.direction, room.layout.firstRowWidth, room.layout.pattern ?? 'optimized', room.layout.fixedStagger, room.layout.startWithFullPlank ?? false, flooring]);
   const cached = autoCache.get(key); if (cached) return cached;
