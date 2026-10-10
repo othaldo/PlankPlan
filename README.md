@@ -20,6 +20,19 @@ Im Canvas verschiebt **Leertaste gedrückt halten + Ziehen** den Plan vorüberge
 
 Unter Windows geht es auch per Doppelklick auf **Start-PlankPlan.cmd**. Das startet den lokalen Entwicklungsserver und öffnet den Browser. Das Terminalfenster während der Nutzung offen lassen; Strg+C beendet den Server.
 
+## GitHub Pages und Nutzung unterwegs
+
+Der Workflow `.github/workflows/pages.yml` testet und baut bei jedem Push auf `main` die App für `/PlankPlan/` und veröffentlicht sie über GitHub Pages. Er kann auch manuell über Actions gestartet werden. Voraussetzung: GitHub Pages muss für das Repository verfügbar sein und unter Settings → Pages als Quelle **GitHub Actions** verwenden. Bei privaten Repositories hängt die Verfügbarkeit vom GitHub-Tarif ab.
+
+Nach erfolgreichem Deployment ist die App unter https://othaldo.github.io/PlankPlan/ erreichbar. Der lokale Entwicklungsserver bleibt weiterhin unter `/` verfügbar. Den Pages-Build lokal prüfen:
+
+```powershell
+npm run build -- --mode pages
+npm run preview -- --mode pages
+```
+
+Am PC **JSON speichern**, die Datei aufs Handy übertragen und dort **JSON laden**. Die Datei enthält auch die Grundrissbilder. Die veröffentlichte App lädt keine Planungen hoch; sie speichert weiterhin nur im jeweiligen Browser. PC, Handy und die lokale beziehungsweise veröffentlichte Adresse haben getrennte Speicher. Es gibt keinen automatischen Geräteabgleich.
+
 ## MVP benutzen
 
 1. Etage auswählen oder eine weitere Etage anlegen.
