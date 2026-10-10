@@ -3,6 +3,18 @@ import { parseProject, parseRooms } from './project';
 import { serializeProject } from '../export/project';
 import { demoProject, newFloor } from '../model/types';
 describe('project JSON', () => {
+  it('round-trips all floors and their rules, images, calibration, material plan and display settings', () => {
+    const p = demoProject(), upper = newFloor('Obergeschoss');
+    upper.rooms = [{ ...p.floors[0].rooms[0], id: 'upper-room', name: 'Schlafzimmer',
+      layout: { direction: 90, offsetX: 41, offsetY: 73, firstRowWidth: 'full', pattern: 'custom', fixedStagger: 321.3, startWithFullPlank: false },
+      rules: { minEndPieceLength: 200, minJointOffset: 200, jointOffset: 321.3 } }];
+    upper.background = { name: 'plan.png', dataUrl: 'data:image/png;base64,aGVsbG8=', widthPx: 800, heightPx: 600, opacity: .7, origin: { x: 10, y: 20 } };
+    upper.calibration = { pointsPx: [{ x: 0, y: 0 }, { x: 500, y: 0 }], distanceMm: 4000, mmPerPixel: 8 };
+    p.floors.push(upper); p.shareOffcuts = false;
+    p.materialPlan = { roomOrder: ['upper-room'], adaptive: true, signature: 'saved' };
+    p.ui = { selectedFloorId: upper.id, selectedRoomId: 'upper-room', snap: 50, snapRooms: false, showBoards: false, showCutColors: false, showSpacers: true };
+    expect(parseProject(serializeProject(p))).toEqual(p);
+  });
   it.each(['full', 180] as const)('round-trips the first row preference %s', firstRowWidth => {
     const p = demoProject(); p.floors[0].rooms[0].layout.firstRowWidth = firstRowWidth;
     expect(parseProject(serializeProject(p))).toEqual(p);

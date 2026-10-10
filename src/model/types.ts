@@ -16,7 +16,11 @@ export interface Background {
 }
 export interface Calibration { pointsPx: [Point, Point]; distanceMm: number; mmPerPixel: number }
 export interface Floor { id: string; name: string; background: Background | null; calibration: Calibration | null; rooms: Room[] }
-export interface Project { version: 1; name: string; flooring: Flooring; floors: Floor[]; shareOffcuts?: boolean; materialPlan?: { roomOrder: string[]; adaptive: boolean; signature: string } }
+export interface ProjectView {
+  selectedFloorId?: string; selectedRoomId?: string | null; snap?: number; snapRooms?: boolean;
+  showBoards?: boolean; showCutColors?: boolean; showSpacers?: boolean;
+}
+export interface Project { version: 1; name: string; flooring: Flooring; floors: Floor[]; shareOffcuts?: boolean; ui?: ProjectView; materialPlan?: { roomOrder: string[]; adaptive: boolean; signature: string } }
 export const PRESETS: Flooring[] = [
   { name: 'Parador Selected · Eiche Luxemburg', length: 1285, width: 194, thickness: 8,
     expansionGap: 10, minRowWidth: 60, minEndPieceLength: 300, jointOffset: 400, minJointOffset: 300, boardsPerPack: 10, reservePercent: 5 },

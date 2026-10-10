@@ -34,6 +34,8 @@ const floor = z.object({ id, name, background: background.nullable(), calibratio
     if (new Set(f.rooms.map(r => r.id)).size !== f.rooms.length) ctx.addIssue({ code: 'custom', message: 'Raum-IDs müssen je Etage eindeutig sein.' });
   });
 export const projectSchema = z.object({ version: z.literal(1), name, flooring, floors: z.array(floor).min(1).max(50), shareOffcuts: z.boolean().optional(),
+  ui: z.object({ selectedFloorId: id.optional(), selectedRoomId: id.nullable().optional(), snap: z.union([z.literal(1), z.literal(10), z.literal(50), z.literal(100)]).optional(),
+    snapRooms: z.boolean().optional(), showBoards: z.boolean().optional(), showCutColors: z.boolean().optional(), showSpacers: z.boolean().optional() }).optional(),
   materialPlan: z.object({ roomOrder: z.array(z.string().max(500)).max(5000), adaptive: z.boolean(), signature: z.string().max(2e6) }).optional() })
   .superRefine((p, ctx) => {
     if (new Set(p.floors.map(f => f.id)).size !== p.floors.length) ctx.addIssue({ code: 'custom', message: 'Etagen-IDs müssen eindeutig sein.' });

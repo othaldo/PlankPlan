@@ -683,7 +683,7 @@ test('calibrates and replaces backgrounds without scaling existing rooms and res
   await expect.poll(async () => (await storedFloor()).calibration?.mmPerPixel).toBeCloseTo(10, 5);
   await expect.poll(async () => (await storedFloor()).rooms).toEqual(original.rooms);
   await page.reload(); await expect(page.getByText('10,000 mm / Bildpixel')).toBeVisible();
-  await page.getByText('Sicherung', {exact:true}).click();
+  await page.getByText('Älterer Sicherungsstand', {exact:true}).click();
   await expect(page.getByText('Vor dem Kalibrieren des Grundrissbilds', {exact:false})).toBeVisible();
   await page.getByRole('button', {name:'Sicherung wiederherstellen',exact:true}).click();
   await expect(page.getByRole('status')).toContainText('Gesicherten Stand wiederhergestellt');
@@ -692,7 +692,7 @@ test('calibrates and replaces backgrounds without scaling existing rooms and res
   await expect.poll(async () => (await storedFloor()).background.name).toBe('existing-rooms.png');
   await page.getByRole('button', {name:'Rückgängig',exact:true}).click();
   await expect.poll(async () => (await storedFloor()).calibration?.mmPerPixel).toBeCloseTo(10, 5);
-  await page.getByText('Sicherung', {exact:true}).click();
+  await page.getByText('Älterer Sicherungsstand', {exact:true}).click();
   await image.setInputFiles({ name: 'replacement.png', mimeType: 'image/png', buffer: Buffer.from(base64, 'base64') });
   await expect(page.getByRole('status')).toContainText('Grundriss geladen');
   await expect(page.getByLabel('Raumkonturen ebenfalls skalieren')).not.toBeChecked();

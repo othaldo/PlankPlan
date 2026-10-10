@@ -49,17 +49,17 @@ function App() {
   useEffect(() => { latestProject.current = project; }, [project]);
   const [scaleRooms, setScaleRooms] = useState(false);
   const [canvasVersion, setCanvasVersion] = useState(0);
-  const [floorId, setFloorId] = useState(project.floors[0].id);
-  const [roomId, setRoomId] = useState<string | null>(project.floors[0].rooms[0]?.id ?? null);
+  const [floorId, setFloorId] = useState(project.ui?.selectedFloorId ?? project.floors[0].id);
+  const [roomId, setRoomId] = useState<string | null>(project.ui?.selectedRoomId ?? (project.floors.find(f => f.id === project.ui?.selectedFloorId) ?? project.floors[0]).rooms[0]?.id ?? null);
   const [tool, setTool] = useState<Tool>('select');
   const [draft, setDraft] = useState<Point[]>([]);
   const [calibrationPoints, setCalibrationPoints] = useState<Point[]>([]);
   const [distance, setDistance] = useState(4000);
-  const [snap, setSnap] = useState(10);
-  const [snapRooms, setSnapRooms] = useState(true);
-  const [showBoards, setShowBoards] = useState(true);
-  const [showCutColors, setShowCutColors] = useState(true);
-  const [showSpacers, setShowSpacers] = useState(false);
+  const [snap, setSnap] = useState(project.ui?.snap ?? 10);
+  const [snapRooms, setSnapRooms] = useState(project.ui?.snapRooms ?? true);
+  const [showBoards, setShowBoards] = useState(project.ui?.showBoards ?? true);
+  const [showCutColors, setShowCutColors] = useState(project.ui?.showCutColors ?? true);
+  const [showSpacers, setShowSpacers] = useState(project.ui?.showSpacers ?? false);
   const [notice, setNotice] = useState(initial.error);
   const [saveState, setSaveState] = useState('Lokal gespeichert');
   const [roomsDialog, setRoomsDialog] = useState(false);
@@ -72,6 +72,14 @@ function App() {
   const imageInput = useRef<HTMLInputElement>(null), jsonInput = useRef<HTMLInputElement>(null);
   const floor = project.floors.find(f => f.id === floorId) ?? project.floors[0];
   const room = floor.rooms.find(r => r.id === roomId);
+  const exportProject = useMemo(() => ({ ...project, ui: { selectedFloorId: floor.id, selectedRoomId: room?.id ?? null,
+    snap, snapRooms, showBoards, showCutColors, showSpacers } }), [project, floor.id, room?.id, snap, snapRooms, showBoards, showCutColors, showSpacers]);
+  function restoreView(next: Project) {
+    const target = next.floors.find(f => f.id === next.ui?.selectedFloorId) ?? next.floors[0];
+    setFloorId(target.id); setRoomId(target.rooms.find(r => r.id === next.ui?.selectedRoomId)?.id ?? target.rooms[0]?.id ?? null);
+    setSnap(next.ui?.snap ?? 10); setSnapRooms(next.ui?.snapRooms ?? true); setShowBoards(next.ui?.showBoards ?? true);
+    setShowCutColors(next.ui?.showCutColors ?? true); setShowSpacers(next.ui?.showSpacers ?? false);
+  }
   const roomMaterial = room ? roomFlooring(room, project.flooring) : project.flooring;
   const globalPlan = useMemo(() => optimizedProject?.floors === project.floors && optimizedProject.flooring === project.flooring && optimizedProject.materialPlan === project.materialPlan && project.materialPlan?.signature === planningSignature(project)
     ? optimizedProject.plan : planProject(project), [project, optimizedProject]);
@@ -93,7 +101,7 @@ function App() {
 
   async function safety(label: string) {
     try {
-      setCheckpoint(await saveCheckpoint(project, label));
+      setCheckpoint(await saveCheckpoint(exportProject, label));
       if (latestProject.current !== project) { setNotice('Das Projekt wurde währenddessen geändert. Bitte die Aktion erneut ausführen.'); return false; }
       return true;
     }
@@ -103,10 +111,10 @@ function App() {
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      try { localStorage.setItem(STORAGE_KEY, serializeProject(project)); setSaveState('Lokal gespeichert'); }
+      try { localStorage.setItem(STORAGE_KEY, serializeProject(exportProject)); setSaveState('Lokal gespeichert'); }
       catch { setSaveState('Browserspeicher voll · bitte JSON speichern'); }
     }, 300); return () => clearTimeout(timer);
-  }, [project]);
+  }, [exportProject]);
   useEffect(() => {
     worker.current?.terminate(); worker.current = null; setOptimizing(false);
   }, [project, floorId, roomId]);
@@ -236,7 +244,7 @@ function App() {
     if (!file) return;
     if (file.size > 24e6) { setNotice('Das Projekt darf maximal 24 MB groß sein.'); return; }
     try { const next = parseProject(await file.text()); if (!await safety('Vor dem Laden eines Projekts')) return;
-      setProject(next); setFloorId(next.floors[0].id); setRoomId(next.floors[0].rooms[0]?.id ?? null);
+      setProject(next); restoreView(next);
       setTool('select'); setDraft([]); setCalibrationPoints([]); setNotice('Projekt einschließlich aller Etagen und Grundrisse geladen.');
     } catch (e) { setNotice((e as Error).message); }
   }
@@ -256,14 +264,16 @@ function App() {
         <span><span className="status-dot" />{saveState}</span></div>
       <div className="header-actions"><button disabled={!canUndo} onClick={() => { undo(); resetEditing(); setNotice('Letzte Änderung zurückgenommen.'); }}>Rückgängig</button>
         <button disabled={!canRedo} onClick={() => { redo(); resetEditing(); setNotice('Änderung wiederhergestellt.'); }}>Wiederholen</button>
-        <details className="safety-menu"><summary>Sicherung</summary><div><p>{checkpoint ? `${checkpoint.label} · ${new Date(checkpoint.date).toLocaleString('de-DE')}` : 'Noch keine Sicherung vorhanden.'}</p>
-          <button disabled={!checkpoint} onClick={() => { if (checkpoint) downloadProject(checkpoint.project); }}>Sicherung als JSON speichern</button>
+        <details className="safety-menu"><summary>Älterer Sicherungsstand</summary><div><p>{checkpoint ? `${checkpoint.label} · ${new Date(checkpoint.date).toLocaleString('de-DE')}` : 'Noch keine Sicherung vorhanden.'}</p>
+          <p>Dieser Stand enthält spätere Änderungen nicht. Für die Übertragung die aktuelle Planung speichern.</p>
+          <button className="primary" onClick={() => downloadProject(exportProject)}>Aktuelle Planung als JSON speichern</button>
+          <button disabled={!checkpoint} onClick={() => { if (checkpoint) downloadProject(checkpoint.project); }}>Älteren Sicherungsstand als JSON speichern</button>
           <button disabled={!checkpoint} onClick={() => { if (!checkpoint) return;
-            const next = parseProject(serializeProject(checkpoint.project)); setProject(next); setFloorId(next.floors[0].id); setRoomId(next.floors[0].rooms[0]?.id ?? null);
+            const next = parseProject(serializeProject(checkpoint.project)); setProject(next); restoreView(next);
             resetEditing(); setNotice('Gesicherten Stand wiederhergestellt. Rückgängig bringt dich zum vorherigen Stand zurück.'); }}>Sicherung wiederherstellen</button>
         </div></details>
         <button onClick={() => jsonInput.current?.click()}><ArrowUpFromLine size={16} />Projekt laden</button>
-        <button className="primary" onClick={() => downloadProject(project)}><ArrowDownToLine size={16} />JSON speichern</button></div>
+        <button className="primary" title="Aktuelle Planung mit allen Etagen, Räumen, Grundrissen und Einstellungen speichern" onClick={() => downloadProject(exportProject)}><ArrowDownToLine size={16} />JSON speichern</button></div>
       <input hidden type="file" accept=".json,application/json" ref={jsonInput} onChange={e => { void loadProject(e.target.files?.[0]); e.target.value = ''; }} />
     </header>
     <div className="workspace">
@@ -346,7 +356,7 @@ function App() {
           tool === 'calibrate' ? <><Ruler size={14} />Zwei Punkte einer bekannten Strecke im Grundriss anklicken.</> :
           tool === 'pan' ? <><Hand size={14} />Plan mit gedrückter Maustaste verschieben · Mausrad: schieben · Strg + Mausrad: zoomen.</> :
           tool === 'move-room' ? <><Move size={14} />Raum anklicken und ziehen. Nahe Ecken und Wände rasten exakt zusammen.</> :
-          <><MousePointer2 size={14} />Leertaste + Ziehen: Plan schieben · Wandmaß: Länge ändern · +: Punkt einfügen · Shift: gerade ziehen.</>}
+          <><MousePointer2 size={14} />Touch: Ziehen schiebt · zwei Finger zoomen. <HelpInfo label="Canvas-Steuerung">Touch: Im Auswahlmodus mit einem Finger verschieben, Eckpunkte ziehen oder Wandmaße antippen. Zwei Finger verschieben und zoomen in jedem Werkzeug. Beim Zeichnen und Kalibrieren setzt ein kurzes Tippen einen Punkt. Maus: Leertaste + Ziehen schiebt, Strg + Mausrad zoomt, Shift zieht Kanten gerade.</HelpInfo></>}
           {tool === 'draw' && draft.length > 0 && <div className="drawing-actions"><button onClick={() => setDraft(draft.slice(0, -1))}>Punkt zurück</button><button disabled={draft.length < 3} onClick={() => addRoom(draft)}>Raum schließen</button></div>}</div>
         <PlanCanvas key={`${floor.id}:${canvasVersion}`} floor={floor} selectedId={roomId} layouts={computation.layouts} tool={tool} draft={draft} setDraft={setDraft}
           calibrationPoints={calibrationPoints} setCalibrationPoints={setCalibrationPoints} onSelect={setRoomId} onRoom={addRoom}

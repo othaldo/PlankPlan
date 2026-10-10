@@ -31,7 +31,9 @@ npm run build -- --mode pages
 npm run preview -- --mode pages
 ```
 
-Am PC **JSON speichern**, die Datei aufs Handy übertragen und dort **JSON laden**. Die Datei enthält auch die Grundrissbilder. Die veröffentlichte App lädt keine Planungen hoch; sie speichert weiterhin nur im jeweiligen Browser. PC, Handy und die lokale beziehungsweise veröffentlichte Adresse haben getrennte Speicher. Es gibt keinen automatischen Geräteabgleich.
+Am PC **JSON speichern**, die Datei aufs Handy übertragen und dort **Projekt laden**. Die Datei enthält alle Etagen, Räume, Grundrissbilder, Kalibrierungen, Verlegeregeln und Materialeinstellungen sowie die ausgewählte Etage, den ausgewählten Raum, Zeichenraster, Einrasten und Anzeigeoptionen (Dielen, Zuschnittfarben, Abstandskeile). **Älterer Sicherungsstand** enthält einen früheren Stand vor einer Änderung; dessen Export ist kein Export der aktuellen Planung. Im Sicherungsmenü gibt es deshalb auch einen eigenen Button für den aktuellen Export. Die veröffentlichte App lädt keine Planungen hoch; sie speichert weiterhin nur im jeweiligen Browser. PC, Handy und die lokale beziehungsweise veröffentlichte Adresse haben getrennte Speicher. Es gibt keinen automatischen Geräteabgleich.
+
+Touch im Canvas: Im Auswahlmodus verschiebt Ziehen mit einem Finger den Plan; Eckpunkte bleiben direkt verschiebbar. Zwei Finger verschieben und zoomen in jedem Werkzeug. Beim Zeichnen und Kalibrieren setzt kurzes Tippen einen Punkt. Sobald ein zweiter Finger hinzukommt, wird eine begonnene Konturbearbeitung abgebrochen. Nach einer Zweifingergeste beide Finger anheben, bevor weiter bearbeitet wird. Gesten verändern keine Raummaße und scrollen nicht die Seite.
 
 ## MVP benutzen
 

@@ -49,6 +49,21 @@ export function PlanCanvas({ floor, selectedId, layouts, tool, draft, setDraft, 
   const [alignment, setAlignment] = useState<{ anchor: Point; point: Point } | null>(null);
   const [activeVertex, setActiveVertex] = useState<{ id: string; index: number } | null>(null);
   const [activeWall, setActiveWall] = useState<{ id: string; index: number } | null>(null);
+  const touches = useRef(new Map<number, { point: Point; start: Point; moved: boolean }>());
+  const touchGesture = useRef<{ ids: number[]; center: Point; distance: number; anchor: Point; scale: number; view: typeof view } | null>(null);
+  function cancelEdit() {
+    drag.current = null; lastVertexPointer.current = null; setPreview(null); setAlignment(null); setSnapTarget(null); setCursor(null);
+  }
+  function cancelTouches() {
+    const ids = [...touches.current.keys()]; touches.current.clear(); touchGesture.current = null; cancelEdit();
+    for (const id of ids) if (svg.current?.hasPointerCapture(id)) svg.current.releasePointerCapture(id);
+  }
+  useEffect(() => {
+    const hidden = () => { if (document.hidden) cancelTouches(); };
+    window.addEventListener('blur', cancelTouches); document.addEventListener('visibilitychange', hidden);
+    return () => { window.removeEventListener('blur', cancelTouches); document.removeEventListener('visibilitychange', hidden); };
+  }, []);
+  useEffect(() => () => cancelTouches(), [floor.id, tool, floor.background?.dataUrl, floor.calibration?.mmPerPixel]);
   useEffect(() => {
     function endSpacePan() {
       spaceHeld.current = false; setSpacePan(false);
@@ -110,7 +125,8 @@ export function PlanCanvas({ floor, selectedId, layouts, tool, draft, setDraft, 
     setSnapTarget(target); return target ?? result;
   }
   function finish() { const error = validatePolygon(draft); if (error) onError(error); else onRoom(draft); }
-  function click(e: ReactPointerEvent<SVGSVGElement>) {
+  function click(e: ReactPointerEvent<SVGSVGElement>, touchTap = false) {
+    if (e.pointerType === 'touch' && !touchTap && (tool === 'draw' || tool === 'calibrate')) return;
     if (e.button !== 0 || drag.current) return;
     const p = coordinate(e.clientX, e.clientY);
     if (tool === 'draw') {
@@ -124,9 +140,30 @@ export function PlanCanvas({ floor, selectedId, layouts, tool, draft, setDraft, 
         onError('Bitte beide Messpunkte innerhalb des Grundrissbilds setzen.');
       else setCalibrationPoints([...calibrationPoints, p]);
     }
-    if (tool === 'pan') { drag.current = { kind: 'pan', point: p, view }; e.currentTarget.setPointerCapture(e.pointerId); }
+    if (tool === 'pan' || (e.pointerType === 'touch' && tool === 'select')) {
+      drag.current = { kind: 'pan', point: p, view, pointerId: e.pointerId }; e.currentTarget.setPointerCapture(e.pointerId);
+    }
   }
   function spacePointer(e: ReactPointerEvent<SVGSVGElement>) {
+    if (e.pointerType === 'touch') {
+      const point = { x: e.clientX, y: e.clientY };
+      touches.current.set(e.pointerId, { point, start: point, moved: false });
+      e.currentTarget.setPointerCapture(e.pointerId);
+      if (touches.current.size >= 2) {
+        e.preventDefault(); e.stopPropagation(); cancelEdit(); setActiveWall(null); setActiveVertex(null);
+        if (!touchGesture.current) {
+          const ids = [...touches.current.keys()].slice(0, 2);
+          const a = touches.current.get(ids[0])!.point, b = touches.current.get(ids[1])!.point;
+          const center = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+          const matrix = svg.current?.getScreenCTM();
+          if (matrix) touchGesture.current = { ids, center, distance: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)),
+            anchor: coordinate(center.x, center.y), scale: Math.hypot(matrix.a, matrix.b), view };
+        }
+        return;
+      }
+      // After a pinch, ignore the remaining finger until both have lifted.
+      if (touchGesture.current) { e.preventDefault(); e.stopPropagation(); return; }
+    }
     if (!spaceHeld.current || e.button !== 0) return;
     // Capture before rooms, vertices and wall labels can start an edit.
     e.preventDefault(); e.stopPropagation();
@@ -134,6 +171,25 @@ export function PlanCanvas({ floor, selectedId, layouts, tool, draft, setDraft, 
     e.currentTarget.setPointerCapture(e.pointerId);
   }
   function move(e: ReactPointerEvent<SVGSVGElement>) {
+    const touch = touches.current.get(e.pointerId);
+    if (touch) {
+      touch.point = { x: e.clientX, y: e.clientY };
+      touch.moved ||= Math.hypot(e.clientX - touch.start.x, e.clientY - touch.start.y) > 8;
+      const gesture = touchGesture.current;
+      if (gesture) {
+        const a = touches.current.get(gesture.ids[0])?.point, b = touches.current.get(gesture.ids[1])?.point;
+        if (a && b && gesture.scale > 0) {
+          const center = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+          const factor = Math.max(100 / gesture.view.w, Math.min(2e6 / gesture.view.w,
+            gesture.distance / Math.max(1, Math.hypot(a.x - b.x, a.y - b.y))));
+          const v = gesture.view;
+          setView({ x: gesture.anchor.x - (gesture.anchor.x - v.x) * factor - (center.x - gesture.center.x) * factor / gesture.scale,
+            y: gesture.anchor.y - (gesture.anchor.y - v.y) * factor - (center.y - gesture.center.y) * factor / gesture.scale,
+            w: v.w * factor, h: v.h * factor });
+        }
+        return;
+      }
+    }
     const p = coordinate(e.clientX, e.clientY);
     const d = drag.current;
     if (d?.kind === 'pan' && d.view) {
@@ -185,7 +241,14 @@ export function PlanCanvas({ floor, selectedId, layouts, tool, draft, setDraft, 
     if (error) { onError(error); return; }
     onPolygon(room.id, polygon); setActiveVertex(null);
   }
-  function release() {
+  function release(e: ReactPointerEvent<SVGSVGElement>) {
+    const touch = touches.current.get(e.pointerId);
+    touches.current.delete(e.pointerId);
+    if (touchGesture.current) {
+      if (!touches.current.size) touchGesture.current = null;
+      cancelEdit(); return;
+    }
+    if (touch && !touch.moved && (tool === 'draw' || tool === 'calibrate')) click(e, true);
     const d = drag.current;
     if ((d?.kind === 'vertex' || d?.kind === 'room') && d.id && d.current) {
       const error = validatePolygon(d.current); if (error) onError(error); else onPolygon(d.id, d.current);
@@ -197,6 +260,9 @@ export function PlanCanvas({ floor, selectedId, layouts, tool, draft, setDraft, 
     e.stopPropagation(); setActiveWall(null); onSelect(room.id);
     if (tool === 'move-room') {
       drag.current = { kind: 'room', id: room.id, point: coordinate(e.clientX, e.clientY), initial: room.polygon };
+      svg.current?.setPointerCapture(e.pointerId);
+    } else if (e.pointerType === 'touch') {
+      drag.current = { kind: 'pan', point: coordinate(e.clientX, e.clientY), view, pointerId: e.pointerId };
       svg.current?.setPointerCapture(e.pointerId);
     }
   }
@@ -254,7 +320,8 @@ export function PlanCanvas({ floor, selectedId, layouts, tool, draft, setDraft, 
   return <div ref={canvas} className={`plan-canvas tool-${tool}${spacePan ? ' space-pan' : ''}`}
     onPointerEnter={() => { canvasHovered.current = true; }} onPointerLeave={() => { canvasHovered.current = false; }}>
     <svg ref={svg} role="img" aria-label="Interaktiver Verlegeplan" viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`}
-      onPointerDownCapture={spacePointer} onPointerDown={click} onPointerMove={move} onPointerUp={release} onPointerCancel={() => { drag.current = null; lastVertexPointer.current = null; setPreview(null); setAlignment(null); setSnapTarget(null); }}>
+      onPointerDownCapture={spacePointer} onPointerDown={click} onPointerMove={move} onPointerUp={release}
+      onPointerCancel={cancelTouches} onLostPointerCapture={e => { if (touches.current.has(e.pointerId)) cancelTouches(); }}>
       <defs><pattern id="grid" width={gridSize} height={gridSize} patternUnits="userSpaceOnUse"><path d={`M ${gridSize} 0 L 0 0 0 ${gridSize}`} fill="none" stroke="#dce1da" strokeWidth="1" vectorEffect="non-scaling-stroke" /></pattern></defs>
       <rect x={view.x - view.w} y={view.y - view.h} width={view.w * 3} height={view.h * 3} fill="url(#grid)" />
       {floor.background && <image href={floor.background.dataUrl} x={floor.background.origin.x} y={floor.background.origin.y}
