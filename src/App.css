@@ -37,6 +37,7 @@
 .wall-length-label{cursor:pointer;outline:none}.wall-length-label:hover rect,.wall-length-label:focus-visible rect{fill:#edf1e9;stroke:#4b6546;stroke-width:2}
 .wall-editor{position:absolute;top:12px;left:12px;width:min(225px,calc(100% - 24px));padding:12px;background:white;border:1px solid var(--line);border-radius:7px;box-shadow:0 3px 15px #0002;z-index:2}
 .wall-editor>div{display:flex;align-items:center;font-size:12px}.wall-editor>div>button{margin-left:auto;border:0;background:transparent;padding:3px 7px}.wall-editor .field{margin-top:6px}
+.space-pan svg,.space-pan svg *{cursor:grab!important}.space-pan svg:active,.space-pan svg:active *{cursor:grabbing!important}
 @media(min-width:951px){
   .app{height:100dvh;min-height:0;display:flex;flex-direction:column;overflow:hidden}
   .app-header{flex-shrink:0}

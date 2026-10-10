@@ -333,7 +333,7 @@ function App() {
           tool === 'calibrate' ? <><Ruler size={14} />Zwei Punkte einer bekannten Strecke im Grundriss anklicken.</> :
           tool === 'pan' ? <><Hand size={14} />Plan mit gedrückter Maustaste verschieben · Mausrad zum Zoomen.</> :
           tool === 'move-room' ? <><Move size={14} />Raum anklicken und ziehen. Nahe Ecken und Wände rasten exakt zusammen.</> :
-          <><MousePointer2 size={14} />Wandmaß: Länge ändern · +: Punkt einfügen · Shift: gerade ziehen · Entf: Punkt löschen.</>}
+          <><MousePointer2 size={14} />Leertaste + Ziehen: Plan schieben · Wandmaß: Länge ändern · +: Punkt einfügen · Shift: gerade ziehen.</>}
           {tool === 'draw' && draft.length > 0 && <div className="drawing-actions"><button onClick={() => setDraft(draft.slice(0, -1))}>Punkt zurück</button><button disabled={draft.length < 3} onClick={() => addRoom(draft)}>Raum schließen</button></div>}</div>
         <PlanCanvas key={`${floor.id}:${canvasVersion}`} floor={floor} selectedId={roomId} layouts={computation.layouts} tool={tool} draft={draft} setDraft={setDraft}
           calibrationPoints={calibrationPoints} setCalibrationPoints={setCalibrationPoints} onSelect={setRoomId} onRoom={addRoom}

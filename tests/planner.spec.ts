@@ -1,4 +1,61 @@
 import { expect, test } from '@playwright/test';
+test('pans with the horizontal mouse wheel at different zoom levels without changing rooms or page scroll', async ({ page }) => {
+  await page.goto('/');
+  const svg=page.getByRole('img',{name:'Interaktiver Verlegeplan'});
+  const view=async()=> (await svg.getAttribute('viewBox'))!.split(' ').map(Number);
+  const pageScroll=()=>page.evaluate(()=>[window.scrollX,window.scrollY]);
+  const rooms=()=>page.evaluate(()=>JSON.parse(localStorage.getItem('plankplan.project.v1')??'null')?.floors);
+  await expect.poll(rooms).toBeTruthy(); const beforeRooms=await rooms(),beforeScroll=await pageScroll();
+  await svg.hover(); const before=await view();
+  await page.mouse.wheel(250,0); await expect.poll(async()=>(await view())[0]).toBeGreaterThan(before[0]);
+  const after=await view(); expect(after.slice(1)).toEqual(before.slice(1));
+  await page.mouse.wheel(-250,0); await expect.poll(async()=>(await view())[0]).toBeCloseTo(before[0],4);
+  await page.mouse.wheel(0,-200); await expect.poll(async()=>(await view())[2]).toBeLessThan(before[2]);
+  const zoomed=await view(); await page.mouse.wheel(250,0); await expect.poll(async()=>(await view())[0]).toBeGreaterThan(zoomed[0]);
+  expect((await view()).slice(1)).toEqual(zoomed.slice(1)); expect(await rooms()).toEqual(beforeRooms); expect(await pageScroll()).toEqual(beforeScroll);
+  // Wheel devices may report pixel, line or page deltas.
+  for(const deltaMode of [1,2]) {
+    const start=await view();
+    await svg.dispatchEvent('wheel',{deltaX:1,deltaY:0,deltaMode,bubbles:true,cancelable:true});
+    await expect.poll(async()=>(await view())[0]).toBeGreaterThan(start[0]); expect((await view()).slice(1)).toEqual(start.slice(1));
+  }
+});
+test('holds Space to pan over rooms and vertices without edits and restores drawing mode', async ({ page }) => {
+  await page.goto('/');
+  const svg=page.getByRole('img',{name:'Interaktiver Verlegeplan'}),canvas=page.locator('.plan-canvas');
+  const view=async()=> (await svg.getAttribute('viewBox'))!.split(' ').map(Number);
+  const rooms=()=>page.evaluate(()=>JSON.parse(localStorage.getItem('plankplan.project.v1')??'null')?.floors);
+  await expect.poll(rooms).toBeTruthy(); const beforeRooms=await rooms();
+  const vertex=page.getByRole('button',{name:'Eckpunkt 1',exact:true}); await vertex.hover();
+  const before=await view(); await page.keyboard.down('Space'); await expect(canvas).toHaveClass(/space-pan/);
+  const point=await vertex.boundingBox(); await page.mouse.down(); await page.mouse.move(point!.x+point!.width/2+100,point!.y+point!.height/2+70,{steps:5}); await page.mouse.up();
+  const after=await view(); expect(after[0]).toBeLessThan(before[0]); expect(after[1]).toBeLessThan(before[1]); expect(after.slice(2)).toEqual(before.slice(2));
+  expect(await rooms()).toEqual(beforeRooms); await expect(page.getByRole('button',{name:'Punkt löschen',exact:true})).not.toBeVisible();
+  await page.keyboard.up('Space'); await expect(canvas).not.toHaveClass(/space-pan/); await expect(canvas).toHaveClass(/tool-select/);
+  await page.getByRole('button',{name:'Raum zeichnen',exact:true}).last().click(); await svg.hover();
+  const drawnBefore=await svg.locator('polyline').count(),drawView=await view();
+  await page.keyboard.down('Space'); await expect(canvas).toHaveClass(/space-pan/);
+  const box=(await svg.boundingBox())!,x=box.x+box.width*.6,y=box.y+box.height*.6;
+  await page.mouse.move(x,y); await page.mouse.down(); await page.mouse.move(x-120,y-80,{steps:5});
+  await page.keyboard.up('Space'); const released=await view(); await page.mouse.move(x-160,y-110); await page.mouse.up();
+  expect(await view()).toEqual(released); expect(released[0]).toBeGreaterThan(drawView[0]); expect(released.slice(2)).toEqual(drawView.slice(2));
+  await expect(canvas).toHaveClass(/tool-draw/); expect(await svg.locator('polyline').count()).toBe(drawnBefore);
+  await page.mouse.click(x,y); await expect(svg.locator('polyline')).toHaveCount(1);
+  await page.keyboard.press('Escape'); expect(await rooms()).toEqual(beforeRooms);
+});
+
+test('Space keeps text entry normal and clears temporary pan after focus loss', async ({ page }) => {
+  await page.goto('/');
+  const svg=page.getByRole('img',{name:'Interaktiver Verlegeplan'}),canvas=page.locator('.plan-canvas');
+  const name=page.getByLabel('Raumname',{exact:true}); await name.fill('Mein'); await svg.hover(); await page.keyboard.press('Space');
+  await expect(name).toHaveValue('Mein '); await expect(canvas).not.toHaveClass(/space-pan/);
+  await name.blur(); await svg.hover(); await page.keyboard.down('Space'); await expect(canvas).toHaveClass(/space-pan/);
+  const box=(await svg.boundingBox())!; await page.mouse.down(); await page.mouse.move(box.x+box.width*.7,box.y+box.height*.7,{steps:3});
+  await page.evaluate(()=>window.dispatchEvent(new Event('blur'))); await expect(canvas).not.toHaveClass(/space-pan/);
+  const view=await svg.getAttribute('viewBox'); await page.mouse.move(box.x+box.width*.5,box.y+box.height*.5); await page.mouse.up();
+  expect(await svg.getAttribute('viewBox')).toBe(view);
+  await page.keyboard.up('Space'); await expect(canvas).toHaveClass(/tool-select/);
+});
 test('straightens a sketched room and edits exact wall lengths directly on the canvas', async ({ page }) => {
   await page.goto('/');
   const project={version:1,name:'Wandmaße',flooring:{name:'Test',length:1285,width:194,thickness:8,expansionGap:10,minRowWidth:60,minEndPieceLength:300,jointOffset:400,minJointOffset:300,boardsPerPack:10},

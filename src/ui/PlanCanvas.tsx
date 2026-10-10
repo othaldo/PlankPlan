@@ -24,6 +24,8 @@ export function PlanCanvas({ floor, selectedId, layouts, tool, draft, setDraft, 
     onError: (message: string) => void; snap: number; snapRooms: boolean; showBoards: boolean; showCutColors?: boolean }) {
   const svg = useRef<SVGSVGElement>(null);
   const canvas = useRef<HTMLDivElement>(null);
+  const spaceHeld = useRef(false), canvasHovered = useRef(false);
+  const [spacePan, setSpacePan] = useState(false);
   const [canvasSize, setCanvasSize] = useState({ width: 800, height: 600 });
   useEffect(() => {
     const node = svg.current; if (!node) return;
@@ -35,13 +37,45 @@ export function PlanCanvas({ floor, selectedId, layouts, tool, draft, setDraft, 
   }, []);
   const [view, setView] = useState({ x: -450, y: -450, w: 7000, h: 5700 });
   const [cursor, setCursor] = useState<Point | null>(null);
-  const drag = useRef<{ kind: 'vertex' | 'pan' | 'room'; id?: string; index?: number; point: Point; initial?: Point[]; view?: typeof view; current?: Point[] } | null>(null);
+  const drag = useRef<{ kind: 'vertex' | 'pan' | 'room'; id?: string; index?: number; pointerId?: number; point: Point; initial?: Point[]; view?: typeof view; current?: Point[] } | null>(null);
   const [preview, setPreview] = useState<{ id: string; polygon: Point[] } | null>(null);
   const [snapTarget, setSnapTarget] = useState<Point | null>(null);
   const lastVertexPointer = useRef<Point | null>(null);
   const [alignment, setAlignment] = useState<{ anchor: Point; point: Point } | null>(null);
   const [activeVertex, setActiveVertex] = useState<{ id: string; index: number } | null>(null);
   const [activeWall, setActiveWall] = useState<{ id: string; index: number } | null>(null);
+  useEffect(() => {
+    function endSpacePan() {
+      spaceHeld.current = false; setSpacePan(false);
+      if (drag.current?.kind === 'pan') {
+        const id = drag.current.pointerId;
+        drag.current = null;
+        if (id !== undefined && svg.current?.hasPointerCapture(id)) svg.current.releasePointerCapture(id);
+      }
+    }
+    function keyDown(event: KeyboardEvent) {
+      if (event.code !== 'Space' || event.ctrlKey || event.metaKey || event.altKey) return;
+      const target = event.target;
+      // Text fields and HTML controls keep their normal keyboard behavior.
+      if (target instanceof Element && target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"]),[role="textbox"]')) return;
+      if (target instanceof Element && target.closest('button') && (!canvasHovered.current || canvas.current?.contains(target))) return;
+      if (!canvasHovered.current && !canvas.current?.contains(document.activeElement)) return;
+      if (drag.current && drag.current.kind !== 'pan') return;
+      event.preventDefault(); event.stopPropagation();
+      spaceHeld.current = true; setSpacePan(true); setCursor(null); setSnapTarget(null);
+    }
+    function keyUp(event: KeyboardEvent) {
+      if (event.code === 'Space' && spaceHeld.current) { event.preventDefault(); endSpacePan(); }
+    }
+    function visibility() { if (document.hidden) endSpacePan(); }
+    window.addEventListener('keydown', keyDown, true); window.addEventListener('keyup', keyUp, true);
+    window.addEventListener('blur', endSpacePan); document.addEventListener('visibilitychange', visibility);
+    return () => {
+      spaceHeld.current = false;
+      window.removeEventListener('keydown', keyDown, true); window.removeEventListener('keyup', keyUp, true);
+      window.removeEventListener('blur', endSpacePan); document.removeEventListener('visibilitychange', visibility);
+    };
+  }, []);
   useEffect(() => { setActiveVertex(null); setActiveWall(null); setAlignment(null); }, [floor.id, selectedId, tool]);
   const scale = floor.calibration?.mmPerPixel ?? 5;
   function fit() {
@@ -87,14 +121,24 @@ export function PlanCanvas({ floor, selectedId, layouts, tool, draft, setDraft, 
     }
     if (tool === 'pan') { drag.current = { kind: 'pan', point: p, view }; e.currentTarget.setPointerCapture(e.pointerId); }
   }
+  function spacePointer(e: ReactPointerEvent<SVGSVGElement>) {
+    if (!spaceHeld.current || e.button !== 0) return;
+    // Capture before rooms, vertices and wall labels can start an edit.
+    e.preventDefault(); e.stopPropagation();
+    drag.current = { kind: 'pan', point: coordinate(e.clientX, e.clientY), view, pointerId: e.pointerId };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  }
   function move(e: ReactPointerEvent<SVGSVGElement>) {
-    const p = coordinate(e.clientX, e.clientY); setCursor(snapped(p, e.shiftKey));
+    const p = coordinate(e.clientX, e.clientY);
     const d = drag.current;
     if (d?.kind === 'pan' && d.view) {
       const m = svg.current?.getScreenCTM(); if (!m) return;
       // Keep the initial world anchor under the current pointer, independent of accumulated pan.
       setView(v => ({ ...v, x: v.x + d.point.x - p.x, y: v.y + d.point.y - p.y }));
+      return;
     }
+    if (spaceHeld.current) return;
+    setCursor(snapped(p, e.shiftKey));
     if (d?.kind === 'vertex' && d.initial && d.id !== undefined && d.index !== undefined) {
       updateVertex(p, e.shiftKey);
     }
@@ -178,8 +222,14 @@ export function PlanCanvas({ floor, selectedId, layouts, tool, draft, setDraft, 
       // React's delegated wheel listener is passive. Cancel scrolling here,
       // including over controls and at zoom limits, before the event bubbles.
       event.preventDefault(); event.stopPropagation();
-      if (!event.deltaY) return;
       const matrix = svg.current?.getScreenCTM(); if (!matrix) return;
+      if (event.deltaX && Math.abs(event.deltaX) >= Math.abs(event.deltaY)) {
+        const pixels = event.deltaX * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? node.clientWidth : 1);
+        const scale = Math.hypot(matrix.a, matrix.b);
+        if (scale > 0) setView(v => ({ ...v, x: v.x + pixels / scale }));
+        return;
+      }
+      if (!event.deltaY) return;
       const point = new DOMPoint(event.clientX, event.clientY).matrixTransform(matrix.inverse());
       zoom(event.deltaY > 0 ? 1.12 : .88, { x: point.x, y: point.y });
     };
@@ -192,9 +242,10 @@ export function PlanCanvas({ floor, selectedId, layouts, tool, draft, setDraft, 
   const wallRoom = floor.rooms.find(r=>r.id===activeWall?.id && r.id===selectedId);
   const wallIndex = activeWall?.index ?? 0;
   const wallStart = wallRoom?.polygon[wallIndex], wallEnd = wallRoom?.polygon[(wallIndex+1)%wallRoom.polygon.length];
-  return <div ref={canvas} className={`plan-canvas tool-${tool}`}>
+  return <div ref={canvas} className={`plan-canvas tool-${tool}${spacePan ? ' space-pan' : ''}`}
+    onPointerEnter={() => { canvasHovered.current = true; }} onPointerLeave={() => { canvasHovered.current = false; }}>
     <svg ref={svg} role="img" aria-label="Interaktiver Verlegeplan" viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`}
-      onPointerDown={click} onPointerMove={move} onPointerUp={release} onPointerCancel={() => { drag.current = null; lastVertexPointer.current = null; setPreview(null); setAlignment(null); setSnapTarget(null); }}>
+      onPointerDownCapture={spacePointer} onPointerDown={click} onPointerMove={move} onPointerUp={release} onPointerCancel={() => { drag.current = null; lastVertexPointer.current = null; setPreview(null); setAlignment(null); setSnapTarget(null); }}>
       <defs><pattern id="grid" width={gridSize} height={gridSize} patternUnits="userSpaceOnUse"><path d={`M ${gridSize} 0 L 0 0 0 ${gridSize}`} fill="none" stroke="#dce1da" strokeWidth="1" vectorEffect="non-scaling-stroke" /></pattern></defs>
       <rect x={view.x - view.w} y={view.y - view.h} width={view.w * 3} height={view.h * 3} fill="url(#grid)" />
       {floor.background && <image href={floor.background.dataUrl} x={floor.background.origin.x} y={floor.background.origin.y}
