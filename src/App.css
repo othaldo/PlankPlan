@@ -12,3 +12,34 @@
 .vertex-actions{position:absolute;top:12px;left:12px;display:flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--line);border-radius:7px;padding:7px 9px;box-shadow:0 3px 12px #0001;font-size:11px;color:var(--green)}.vertex-actions button{padding:5px 7px;font-size:11px;background:var(--pale);border:0}.vertex:focus-visible{stroke:#317d99;stroke-width:3;outline:none}
 .project-packages{padding:13px;background:var(--pale);border-radius:7px;margin-bottom:12px}.project-packages strong{font-size:18px;color:var(--green)}.project-packages p{font-size:10px;line-height:1.6;color:var(--muted);margin:7px 0 0}.project-material dl{margin-bottom:14px}.project-material dt{max-width:165px}.project-order ol{padding-left:19px;font-size:10px;line-height:1.7;color:var(--muted);max-height:220px;overflow:auto}.row-details td:nth-last-child(-n+2){white-space:normal;overflow-wrap:anywhere}.project-material .primary{font-size:11px}
 .app-header{height:auto;min-height:88px;padding-top:12px;padding-bottom:12px}.header-actions{flex-wrap:wrap;align-items:center}.header-actions .safety-menu button{flex:none}@media(max-width:650px){.safety-menu>div{position:fixed;top:145px;right:16px;width:min(285px,calc(100vw - 32px))}}
+
+/* Compact controls, with explanations outside the scroll containers. */
+.help-info{display:inline-flex;vertical-align:middle;margin-left:5px;flex-shrink:0}
+.help-info button{display:inline-flex;align-items:center;justify-content:center;width:23px;height:23px;padding:3px;border:0;border-radius:50%;background:transparent;color:var(--muted);cursor:help}
+.help-info button:hover,.help-info button:focus-visible{background:var(--pale);color:var(--green)}
+.help-info button:focus-visible{outline:2px solid var(--green);outline-offset:2px}
+.help-row{display:flex;justify-content:flex-end;margin:0;height:23px}
+.info-tooltip{position:fixed;z-index:100;width:260px;max-width:calc(100vw - 16px);max-height:260px;overflow:auto;padding:11px 13px;border:1px solid #d6dfcf;border-radius:7px;background:#fff;color:var(--ink);box-shadow:0 5px 22px #0002;font-size:11px;line-height:1.6;pointer-events:none}
+.setup-panel,.results-panel{overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;min-width:0}
+.setup-panel{padding:18px 16px}.results-panel{padding:18px 16px}
+.panel-heading h2{font-size:18px;margin:8px 0 15px}.section{padding:15px 0}
+.section h3,.layout-controls h3{gap:7px;margin-bottom:10px;font-size:12px}
+.layout-controls{padding-top:14px;margin-top:14px}.layout-controls:first-of-type{margin-top:0}
+.field{margin-top:9px}.field>span{margin-bottom:4px}.field input,.field select{height:32px;padding:5px 8px}
+.toggle-field{margin:9px 0 3px}.range-field{margin-top:12px}
+.results-panel>h2{font-size:18px;margin:8px 0 15px}.auto-status{padding:9px;margin-top:10px;align-items:flex-start}
+.auto-status>.help-info{margin-left:auto}.auto-status p{line-height:1.5}
+.edge-result{margin:14px 0;padding:12px}.quantities{margin-top:16px}.area-number{font-size:29px;margin:10px 0 12px}
+.room-dimensions{margin-top:10px;padding-top:10px}.package-result{padding:10px}.project-packages{padding:10px}
+.notice{pointer-events:none}.notice button{pointer-events:auto}
+@media(min-width:951px){
+  .app{height:100dvh;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+  .app-header{flex-shrink:0}
+  .workspace{flex:1;min-height:0;grid-template-rows:minmax(0,1fr);overflow:hidden}
+  .setup-panel,.results-panel{min-height:0;height:100%}
+  .plan-panel{min-height:0;overflow:hidden;padding:18px 18px 12px}
+  .plan-heading{margin-bottom:12px;flex-shrink:0}.plan-heading h1{font-size:24px;margin:5px 0}
+  .canvas-toolbar,.drawing-help,.snap-rooms-control,.canvas-footer{flex-shrink:0}
+  .plan-canvas{flex:1;min-height:150px;height:auto;max-height:none}
+}
+@media(max-width:950px){.setup-panel,.results-panel{max-height:70dvh}.plan-note{display:none}}

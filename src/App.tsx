@@ -13,6 +13,7 @@ import { NumberField } from './ui/NumberField';
 import { PlanCanvas } from './ui/PlanCanvas';
 import { ProjectMaterial } from './ui/ProjectMaterial';
 import { RoomDimensions } from './ui/RoomDimensions';
+import { HelpInfo } from './ui/HelpInfo';
 import { useProjectHistory } from './model/history';
 import { ensureCheckpoint, saveCheckpoint } from './model/checkpoint';
 import type { Checkpoint } from './model/checkpoint';
@@ -258,7 +259,7 @@ function App() {
     </header>
     <div className="workspace">
       <aside className="setup-panel">
-        <div className="panel-heading"><span className="eyebrow">DEIN PROJEKT</span><h2>Von Plan zu Diele.</h2><p>Grundriss einrichten, Raum wählen und die passende Verlegung finden.</p></div>
+        <div className="panel-heading"><span className="eyebrow">DEIN PROJEKT</span><h2>Einrichtung</h2></div>
         <section className="section"><h3><span className="step-number">01</span>Etage & Grundriss</h3>
           <div className="floor-list">{project.floors.map(f => <button key={f.id} className={f.id === floor.id ? 'floor-item active' : 'floor-item'} onClick={() => changeFloor(f.id)}>
             <Layers size={16} /><span>{f.name}</span><small>{f.rooms.length}</small></button>)}</div>
@@ -274,15 +275,15 @@ function App() {
             <details><summary>Bildposition im Plan</summary><div className="field-pair">
               <NumberField label="Grundrissposition X" value={floor.background.origin.x} min={-1e6} onChange={x => updateFloor(f => ({ ...f, background: { ...f.background!, origin: { ...f.background!.origin, x } } }))} />
               <NumberField label="Grundrissposition Y" value={floor.background.origin.y} min={-1e6} onChange={y => updateFloor(f => ({ ...f, background: { ...f.background!, origin: { ...f.background!.origin, y } } }))} />
-            </div><p className="hint">Verschiebt das Bild passend zu deinen Räumen.</p></details>
+            </div><div className="help-row"><HelpInfo label="Bildposition">Verschiebt das Hintergrundbild unabhängig von den Räumen.</HelpInfo></div></details>
             <button className="text-button muted" onClick={async () => { if (!await safety('Vor dem Entfernen des Grundrissbilds')) return;
               updateFloor(f => ({ ...f, background: null, calibration: null })); setCalibrationPoints([]); setTool('select'); }}>Hintergrund entfernen</button>
           </div>}
-          {tool === 'calibrate' && <div className="calibration-card"><strong>Zwei Punkte. Ein Maßstab.</strong><p>Wähle Anfang und Ende einer bekannten Strecke im Bild. {calibrationPoints.length}/2 Punkte gesetzt.</p>
+          {tool === 'calibrate' && <div className="calibration-card"><strong>Maßstab</strong><HelpInfo label="Kalibrierung">Anfang und Ende einer bekannten Strecke im Bild wählen und deren reale Länge eingeben. Kalibriert standardmäßig nur das Bild; bestehende Raummaße bleiben erhalten.</HelpInfo><p>{calibrationPoints.length}/2 Messpunkte</p>
             <NumberField label="Reale Strecke" value={distance} min={1} max={1e6} onChange={setDistance} />
             <button className="primary full" disabled={calibrationPoints.length !== 2} onClick={applyCalibration}>Maßstab übernehmen</button>
             <button className="text-button" onClick={() => setCalibrationPoints([])}>Messpunkte zurücksetzen</button>
-            {floor.rooms.length > 0 && <><small>Kalibriert nur das Bild. Bestehende Raummaße bleiben erhalten.</small>
+            {floor.rooms.length > 0 && <>
               <label className="toggle-field"><input type="checkbox" checked={scaleRooms} onChange={e => setScaleRooms(e.target.checked)} />Raumkonturen ebenfalls skalieren</label>
               {scaleRooms && <small className="warning-text">Ändert die Maße aller Räume dieser Etage. Nur für Konturen verwenden, die im bisherigen Bildmaßstab nachgezeichnet wurden.</small>}</>}
           </div>}
@@ -290,7 +291,7 @@ function App() {
         <section className="section"><h3><span className="step-number">02</span>Räume</h3>
           {floor.rooms.map(r => <button key={r.id} className={r.id === roomId ? 'room-item active' : 'room-item'} onClick={() => { setRoomId(r.id); selectTool('select'); }}>
             <span className="room-dot" /><span>{r.name}</span><small>{r.flooringEnabled === false ? 'ohne Laminat' : computation.layouts.has(r.id) ? `${format(computation.layouts.get(r.id)!.roomArea / 1e6)} m²` : 'Prüfen'}</small><ChevronRight size={14} /></button>)}
-          {!floor.rooms.length && <p className="hint">Zeichne die Raumkontur auf dem Plan oder füge Räume als JSON hinzu.</p>}
+          {!floor.rooms.length && <p className="hint">Raum zeichnen oder JSON einfügen.</p>}
           <div className="button-row"><button className="secondary" disabled={!canDraw} onClick={() => selectTool('draw')}><Plus size={15} />Raum zeichnen</button>
             <button className="icon-button" title="Räume aus JSON einfügen" onClick={() => setRoomsDialog(true)}><ArrowUpFromLine size={16} /></button></div>
           {room && <><label className="field"><span>Raumname</span><input aria-label="Raumname" value={room.name} maxLength={120} onChange={e => updateRoom(r => ({ ...r, name: e.target.value || 'Raum' }))} /></label>
@@ -306,7 +307,7 @@ function App() {
                 const next = floor.rooms.filter(r => r.id !== room.id); updateFloor(f => ({ ...f, rooms: next })); setRoomId(next[0]?.id ?? null);
               }}><Trash2 size={13} />Löschen</button></div></>}
         </section>
-        <section className="section material-section"><h3><span className="step-number">03</span>Dein Laminat</h3>
+        <section className="section material-section"><h3><span className="step-number">03</span>Dein Laminat<HelpInfo label="Materialeinstellungen">Dielenformat und Paketinhalt gelten für das Projekt. Verlegeregeln stellst du rechts am ausgewählten Raum ein.</HelpInfo></h3>
           <label className="field"><span>Formatvorlage</span><select aria-label="Laminatvorlage" value={PRESETS.findIndex(p => p.name === project.flooring.name && p.length === project.flooring.length && p.width === project.flooring.width)}
             onChange={e => { const preset = PRESETS[Number(e.target.value)]; if (preset) setProject(p => ({ ...p, flooring: { ...preset, ...layingRules(p.flooring) } })); }}>
             <option value={-1}>Eigene Maße</option>{PRESETS.map((p, i) => <option value={i} key={p.name}>{p.name}</option>)}</select></label>
@@ -317,8 +318,7 @@ function App() {
           <div className="field-pair"><NumberField label="Dielen pro Paket" value={project.flooring.boardsPerPack ?? 0} max={500} unit="Stk." onChange={boardsPerPack => updateMaterial({ boardsPerPack: boardsPerPack || undefined })} />
             <NumberField label="Zusätzliche Reserve" value={project.flooring.reservePercent ?? 5} max={100} unit="%" onChange={reservePercent => updateMaterial({ reservePercent })} /></div>
           <NumberField label="Sägeblattbreite / Schnittverlust" value={project.flooring.sawKerf ?? 3} max={10} step={.1} onChange={sawKerf => updateMaterial({ sawKerf })} />
-          {!project.flooring.boardsPerPack && <p className="hint">Paketinhalt von der Verpackung eingeben, damit die Paketmenge berechnet werden kann.</p>}
-          <p className="hint">Verlegeregeln stellst du rechts am ausgewählten Raum ein.</p>
+          {!project.flooring.boardsPerPack && <p className="hint warning-text">Paketinhalt fehlt.</p>}
         </section>
         <ProjectMaterial project={project} plan={globalPlan} busy={projectBusy} progress={projectProgress} onOptimize={optimizePackages}
           onCancel={() => { projectWorker.current?.terminate(); projectWorker.current = null; setProjectBusy(false); setNotice('Optimierung abgebrochen. Die bisherige Planung bleibt erhalten.'); }} />
@@ -342,16 +342,14 @@ function App() {
         <div className="canvas-footer">{showCutColors ? <div className="legend"><span><i className="legend-full" />Ganze Diele</span><span><i className="legend-cut" />Zuschnitt</span><span><i className="legend-reused" />Reststück</span></div> : <div className="legend"><span>Fugenbild ohne Zuschnittfarben</span></div>}
           <label><input type="checkbox" checked={showCutColors} onChange={e => setShowCutColors(e.target.checked)} />Zuschnitte farbig markieren</label>
           <label><input type="checkbox" checked={showBoards} onChange={e => setShowBoards(e.target.checked)} />Dielen anzeigen</label></div>
-        <div className="plan-note"><Ruler size={19} /><p><strong>Jede Diele hat ihr echtes Maß.</strong> Der Plan zeigt die verbleibende Geometrie nach dem Zuschnitt. Die Bewegungsfuge bleibt an der Raumkontur frei.</p></div>
       </main>
       <aside className="results-panel"><span className="eyebrow">VERLEGUNG & ERGEBNIS</span><h2>{room?.name ?? 'Raum auswählen'}</h2>
-        {room && room.flooringEnabled !== false ? <><section className="layout-controls"><h3>Verlegeregeln für diesen Raum</h3>
+        {room && room.flooringEnabled !== false ? <><section className="layout-controls"><h3>Verlegeregeln für diesen Raum<HelpInfo label="Raumregeln">Diese Werte gelten nur für {room.name}. Andere Räume behalten ihre Regeln. Bitte an die Verlegeanleitung deines Bodens anpassen.</HelpInfo></h3>
           <NumberField label="Bewegungsfuge" value={roomMaterial.expansionGap} max={100} onChange={expansionGap => updateRules({ expansionGap })} />
           <NumberField label="Mindest-Reihenbreite" value={roomMaterial.minRowWidth} min={1} max={project.flooring.width} onChange={minRowWidth => updateRules({ minRowWidth })} />
           <NumberField label="Mindest-Endstück" value={roomMaterial.minEndPieceLength} min={1} max={project.flooring.length} onChange={minEndPieceLength => updateRules({ minEndPieceLength })} />
           <NumberField label="Stirnfugenversatz je Reihe" value={roomMaterial.jointOffset} max={project.flooring.length - 1} onChange={jointOffset => updateRules({ jointOffset })} />
           <NumberField label="Mindest-Fugenversatz" value={roomMaterial.minJointOffset ?? 300} max={project.flooring.length / 2} onChange={minJointOffset => updateRules({ minJointOffset })} />
-          <p className="hint">Diese Werte gelten nur für {room.name}. Andere Räume behalten ihre Regeln. Bitte an die Verlegeanleitung deines Bodens anpassen.</p>
           </section><section className="layout-controls"><h3>Richtung & Planung</h3><div className="direction-buttons">{[0, 90].map(angle => <button className={room.layout.direction === angle ? 'active' : ''} key={angle} onClick={() => updateRoom(r => ({ ...r, layout: { ...r.layout, direction: angle } }))}>{angle === 0 ? '↔' : '↕'} {angle}°</button>)}</div>
           <NumberField label="Eigener Winkel" value={room.layout.direction} min={-360} max={360} unit="°" onChange={direction => updateRoom(r => ({ ...r, layout: { ...r.layout, direction } }))} />
           <button className="primary full" disabled={optimizing} onClick={() => optimize('fixed-start')}>
@@ -364,14 +362,14 @@ function App() {
             </select></label>
             {room.layout.pattern === 'custom' && <NumberField label="Fester Versatz je Reihe" value={room.layout.fixedStagger ?? roomMaterial.jointOffset} min={0} max={project.flooring.length - .1} step={.1}
               onChange={fixedStagger => updateRoom(r => ({ ...r, layout: { ...r.layout, fixedStagger } }))} />}
-            <p className="hint">{room.layout.pattern === 'custom'
+            <div className="help-row"><HelpInfo label="Verlegemuster">{room.layout.pattern === 'custom'
               ? 'Jede nächste Reihe verschiebt die Fugen um genau diesen Wert. Beim Erreichen einer Dielenlänge beginnt das Muster wieder von vorn. Auch die Paketoptimierung hält den Versatz ein.'
               : room.layout.pattern === 'half' || room.layout.pattern === 'third'
               ? `Die Fugen wiederholen sich alle ${room.layout.pattern === 'half' ? 'zwei' : 'drei'} Reihen. Die Automatik sucht einen passenden Start. Das feste Muster bleibt auch bei der Paketoptimierung erhalten und kann mehr Material benötigen.`
-              : 'Die Suche bevorzugt weniger neue Dielen. Reststücke können zu unterschiedlichen Startlängen führen.'}</p>
+              : 'Die Suche bevorzugt weniger neue Dielen. Reststücke können zu unterschiedlichen Startlängen führen.'}</HelpInfo></div>
             <label className="toggle-field"><input type="checkbox" checked={room.layout.startWithFullPlank ?? false}
               onChange={e => updateRoom(r => ({ ...r, layout: { ...r.layout, startWithFullPlank: e.target.checked } }))} />Mit ganzer Startdiele beginnen</label>
-            <p className="hint">Die erste Startdiele hat dann volle Länge ({project.flooring.length} mm). Die Breite der ersten Reihe stellst du darunter ein. Falls die Vorgaben mit den Mindestlängen oder der Raumkontur kollidieren, zeigt der Plan den Konflikt an.</p>
+            <div className="help-row"><HelpInfo label="Ganze Startdiele">Volle Länge ({project.flooring.length} mm). Die Reihenbreite ist separat einstellbar. Konflikte mit Mindestlängen oder Raumkontur werden angezeigt.</HelpInfo></div>
             <label className="field"><span>Erste Reihe</span><select aria-label="Erste Reihe" value={room.layout.firstRowWidth === undefined ? 'automatic' : room.layout.firstRowWidth === 'full' ? 'full' : 'custom'}
               onChange={e => { const choice = e.target.value; updateRoom(r => ({ ...r, layout: { ...r.layout,
                 firstRowWidth: choice === 'automatic' ? undefined : choice === 'full' ? 'full' : Math.min(project.flooring.width, Math.max(.1, layout?.firstRowWidth || project.flooring.width)) } })); }}>
@@ -381,17 +379,17 @@ function App() {
             </select></label>
             {typeof room.layout.firstRowWidth === 'number' && <NumberField label="Breite der ersten Reihe" value={Math.min(room.layout.firstRowWidth, project.flooring.width)} min={.1} max={project.flooring.width} step={.1}
               onChange={firstRowWidth => updateRoom(r => ({ ...r, layout: { ...r.layout, firstRowWidth } }))} />}
-            <p className="hint">{room.layout.firstRowWidth === undefined ? 'Die Automatik verteilt die Breite auf beide Randreihen.' : 'Deine erste Reihenbreite bleibt fest. Die letzte Reihe passt sich an; die Längsplanung folgt deinen Vorgaben oben.'}</p>
+            <div className="help-row"><HelpInfo label="Erste Reihenbreite">{room.layout.firstRowWidth === undefined ? 'Die Automatik verteilt die Breite auf beide Randreihen.' : 'Deine erste Reihenbreite bleibt fest. Die letzte Reihe passt sich an; die Längsplanung folgt deinen Vorgaben oben.'}</HelpInfo></div>
           </>}
-          {room.layout.mode !== 'manual' && <div className={layout?.feasible ? 'auto-status' : 'auto-status blocked'}><Sparkles size={18} /><div><strong>{layout?.feasible ? 'Automatisch geplant' : 'Keine zulässige Verlegung gefunden'}</strong><p>{!layout?.feasible && layout?.warnings[0] ? layout.warnings[0] : <>Startstücke je Reihe werden so gewählt, dass alle Teilstücke mindestens {roomMaterial.minEndPieceLength} mm lang sind und benachbarte Fugen mindestens {roomMaterial.minJointOffset ?? 300} mm Abstand haben.</>}</p></div></div>}
+          {room.layout.mode !== 'manual' && <div className={layout?.feasible ? 'auto-status' : 'auto-status blocked'}><Sparkles size={16} /><div><strong>{layout?.feasible ? 'Automatisch geplant' : 'Keine zulässige Verlegung gefunden'}</strong>{!layout?.feasible && layout?.warnings[0] && <p>{layout.warnings[0]}</p>}</div><HelpInfo label="Automatische Planung">Mindeststücklänge: {roomMaterial.minEndPieceLength} mm. Mindestabstand benachbarter Fugen: {roomMaterial.minJointOffset ?? 300} mm.</HelpInfo></div>}
           <details className="manual-controls"><summary>Manuell anpassen (Experten)</summary><label className="toggle-field"><input type="checkbox" checked={room.layout.mode === 'manual'} onChange={e => updateRoom(r => ({ ...r, layout: { ...r.layout, mode: e.target.checked ? 'manual' : 'automatic' } }))} />Manuelle Rasterplanung aktivieren</label>
           {room.layout.mode === 'manual' && <>
           <label className="range-field"><span>Quer-Offset <b>{format(room.layout.offsetY)} mm</b></span><input aria-label="Quer-Offset" type="range" min="0" max={project.flooring.width - .1} step=".1" value={room.layout.offsetY}
             onChange={e => updateRoom(r => ({ ...r, layout: { ...r.layout, offsetY: Number(e.target.value) } }))} /></label>
-          <p className="hint">Verschiebt die Reihen quer zur Dielenrichtung.</p>
+          <div className="help-row"><HelpInfo label="Quer-Offset">Verschiebt die Reihen quer zur Dielenrichtung.</HelpInfo></div>
           <NumberField label="Längs-Offset" value={room.layout.offsetX} max={project.flooring.length - .1} step={.1} onChange={offsetX => updateRoom(r => ({ ...r, layout: { ...r.layout, offsetX } }))} />
           <button className="primary full optimize-button" disabled={optimizing || !layout} onClick={() => optimize()}><Sparkles size={16} />{optimizing ? 'Varianten werden geprüft …' : 'Quer-Offset optimieren'}</button>
-          <p className="hint">Hier sind die Mindestlängen nicht automatisch gelöst. Zur automatischen Planung die manuelle Rasterplanung ausschalten.</p></>}
+          <div className="help-row"><HelpInfo label="Manuelle Planung">Das Raster bleibt fest; Mindestlängen werden nicht automatisch gelöst. Für die automatische Planung die manuelle Rasterplanung ausschalten.</HelpInfo></div></>}
           </details></section>
           {computation.errors.has(room.id) && <div className="warning-card"><TriangleAlert size={18} /><p>{computation.errors.get(room.id)}</p></div>}
           {layout && <>{layout.feasible && <><section className="edge-result"><h3>Deine Randreihen</h3><div className="edge-pair"><div className={layout.firstRowWidth < roomMaterial.minRowWidth - .01 ? 'too-narrow' : ''}><span>Erste Reihe</span><strong>{format(layout.firstRowWidth)}<small>mm</small></strong></div>
@@ -402,8 +400,8 @@ function App() {
                 <div><dt>Reststücke wiederverwendet</dt><dd data-testid="reused-pieces">{layout.reusedPieces}</dd></div>
                 <div className="total"><dt>Neue Dielen insgesamt</dt><dd data-testid="new-boards">{layout.newBoards}</dd></div><div><dt>Ausgangsmaterial</dt><dd>{format(layout.materialArea / 1e6, 2)} m²</dd></div><div><dt>Restmaterial & Schnittverlust</dt><dd>{format(layout.wastePercent)} %</dd></div><div><dt>Verbleibende Restfläche</dt><dd>{format(layout.wasteArea / 1e6, 2)} m²</dd></div><div><dt>Davon nutzbare Reststücke</dt><dd>{format(layout.remainingOffcutArea / 1e6, 2)} m²</dd></div></dl>
               {globalPlan.order.length <= 1 ? <div className="package-result"><strong>{packages ? `${packages.packages} ${packages.packages === 1 ? 'Paket' : 'Pakete'} für diesen Raum` : 'Paketinhalt fehlt'}</strong>
-                {packages ? <p>{project.flooring.boardsPerPack} Dielen / Paket · {project.flooring.reservePercent ?? 5} % Zusatzreserve<br />{layout.newBoards} neue Dielen + {packages.reserveBoards} Reserve<br />Gekauft: {packages.purchasedBoards} Dielen · {format(packages.area, 2)} m²</p> : <p>Links „Dielen pro Paket“ eintragen.</p>}</div> : <p className="hint">Pakete werden für alle Räume gemeinsam berechnet: links unter „Pakete für das ganze Projekt“.</p>}
-              <p className="hint">Geeignete gerade Reststücke in voller Dielenbreite werden im gemeinsamen Bestand verwendet. Klickkanten und {project.flooring.sawKerf ?? 3} mm Schnittverlust sind berücksichtigt. Schräg- und Längszuschnitte bleiben konservativ als Restmaterial gezählt.</p></section></>}
+                {packages && <p>{layout.newBoards} Dielen + {packages.reserveBoards} Reserve</p>}</div> : <p className="hint">Paketbedarf links unter „Pakete gesamt“.</p>}
+              <div className="help-row"><HelpInfo label="Materialbedarf">Pakete werden aufgerundet, mit {project.flooring.reservePercent ?? 5} % Reserve. Gerade Reststücke in voller Dielenbreite werden wiederverwendet, mit passenden Klickkanten und {project.flooring.sawKerf ?? 3} mm Schnittverlust. Schräg- und Längszuschnitte zählen als Restmaterial.</HelpInfo></div></section></>}
             {layout.warnings.length > 0 && <div className="warning-card"><TriangleAlert size={18} /><div><strong>Diese Stellen prüfen</strong><ul>{layout.warnings.map(w => <li key={w}>{w}</li>)}</ul></div></div>}
             <details className="row-details"><summary>{layout.rows.length} Reihen im Detail</summary><table><thead><tr><th>Reihe</th><th>Start / Ende (mm)</th><th>Startquelle</th><th>Endquelle</th></tr></thead><tbody>{layout.rows.map(r => {
               const boards = layout.boards.filter(b => b.row === r.index);
@@ -411,8 +409,7 @@ function App() {
             })}</tbody></table></details>
             {!!layout.offcuts.length && <details className="row-details"><summary>{layout.offcuts.length} noch verfügbare Reststücke</summary><table><thead><tr><th>Quelle</th><th>Länge (mm)</th><th>Geeignet für</th></tr></thead><tbody>{layout.offcuts.map(s => <tr key={s.id}><td>{s.sourceBoardId}</td><td>{format(s.length, 1)}</td><td>{s.edge === 'right' ? 'Reihenanfang' : 'Reihenende'}</td></tr>)}</tbody></table></details>}
           </>}
-        </> : <div className="empty-results"><ScanLine size={32} /><p>{room ? 'In diesem Raum ist Laminat ausgeschaltet. Die Raumkontur bleibt als Teil des Grundrisses erhalten und kann an andere Räume einrasten. Er wird nicht mit Dielen gefüllt und benötigt keine Pakete.' : 'Zeichne einen Raum auf dem Grundriss. Hier siehst du anschließend Verlegung, Randreihen und Materialmenge.'}</p></div>}
-        <div className="coming-next"><small>ALS NÄCHSTES</small><p>Schnittplan exportieren und Verlegeschritte zum Ausdrucken.</p></div>
+        </> : <div className="empty-results"><ScanLine size={24} /><p>{room ? 'Laminat ausgeschaltet. Kein Materialbedarf.' : 'Raum zeichnen oder auswählen.'}</p></div>}
       </aside>
     </div>
     {notice && <div className="notice" role="status"><span>{notice}</span><button aria-label="Hinweis schließen" onClick={() => setNotice('')}><X size={17} /></button></div>}

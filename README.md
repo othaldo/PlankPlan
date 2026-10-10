@@ -14,6 +14,8 @@ npm run dev
 
 Die im Terminal ausgegebene lokale Adresse im Browser öffnen (normalerweise http://localhost:5173). Nach der ersten Installation läuft die App ohne Internetzugang. `npm run build` erstellt die statische Anwendung in `dist/`; `npm run preview` zeigt diesen Build lokal an. Eine direkte Öffnung von `index.html` als Datei ist nicht der vorgesehene Startweg.
 
+Die Seitenleisten scrollen unabhängig voneinander. Auf großen Bildschirmen bleibt der Canvas dabei an seinem Platz; auf schmalen Bildschirmen stehen die Bereiche untereinander mit begrenzter eigener Scrollhöhe. Ergänzende Erklärungen öffnen sich über die Info-Symbole per Hover, Tastaturfokus oder Klick. Escape schließt sie. Warnungen, Konflikte und fehlende Eingaben bleiben direkt sichtbar.
+
 Unter Windows geht es auch per Doppelklick auf **Start-PlankPlan.cmd**. Das startet den lokalen Entwicklungsserver und öffnet den Browser. Das Terminalfenster während der Nutzung offen lassen; Strg+C beendet den Server.
 
 ## MVP benutzen

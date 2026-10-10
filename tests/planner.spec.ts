@@ -1,4 +1,18 @@
 import { expect, test } from '@playwright/test';
+test('shows sidebar explanations on hover and keyboard focus without clipped tooltips', async ({ page }) => {
+  await page.goto('/');
+  const explanation='Außenmaße waagerecht und senkrecht im Plan, in Millimetern.';
+  await expect(page.locator('.setup-panel')).not.toContainText(explanation);
+  const icon=page.getByRole('button',{name:'Info: Raummaße',exact:true});
+  await icon.hover(); const tooltip=page.getByRole('tooltip');
+  await expect(tooltip).toContainText(explanation);
+  const box=await tooltip.boundingBox(); expect(box!.x).toBeGreaterThanOrEqual(0); expect(box!.x+box!.width).toBeLessThanOrEqual(1440);
+  await page.getByRole('heading',{name:'Einrichtung',exact:true}).hover(); await expect(tooltip).not.toBeVisible();
+  await icon.focus(); await expect(tooltip).toContainText(explanation);
+  await page.keyboard.press('Escape'); await expect(tooltip).not.toBeVisible();
+  await icon.click(); await expect(tooltip).toBeVisible();
+  await page.locator('.setup-panel').evaluate(node=>{node.scrollTop+=200;}); await expect(tooltip).not.toBeVisible();
+});
 test('edits laying rules per room and preserves them through package optimization and JSON', async ({ page }) => {
   await page.goto('/');
   const project={version:1,name:'Raumregeln',flooring:{name:'Test',length:1285,width:194,thickness:8,expansionGap:10,minRowWidth:60,minEndPieceLength:300,jointOffset:400,minJointOffset:400,boardsPerPack:10,reservePercent:0},
@@ -45,7 +59,7 @@ test('finds a working full-start stagger without guessing and explains an imposs
   await expect(page.getByText('Automatisch geplant',{exact:true})).toBeVisible();
   project.flooring.minEndPieceLength=300;
   await input.setInputFiles({name:'konflikt.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(project))});
-  await expect(page.getByLabel('Verlegemuster')).not.toBeVisible();
+  await expect(page.getByLabel('Verlegemuster', { exact: true })).not.toBeVisible();
   await search.click();
   await expect(page.locator('.notice')).toContainText('Endstück wäre nur 135 mm',{timeout:30000});
   await expect(page.locator('.warning-card')).toContainText('Mindeststücklänge: 300 mm');
@@ -59,9 +73,9 @@ test('uses an exact custom stagger with a full starter and persists both constra
   const input=page.locator('input[type=file][accept=".json,application/json"]');
   await input.setInputFiles({name:'fix.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(project))});
   await expect(page.getByRole('heading',{name:'Fester Start',exact:true})).toBeVisible();
-  await expect(page.getByLabel('Verlegemuster')).not.toBeVisible();
+  await expect(page.getByLabel('Verlegemuster', { exact: true })).not.toBeVisible();
   await page.getByRole('button',{name:'Festen Versatz mit ganzer Startdiele einstellen',exact:true}).click();
-  await expect(page.getByLabel('Verlegemuster')).toHaveValue('custom');
+  await expect(page.getByLabel('Verlegemuster', { exact: true })).toHaveValue('custom');
   await expect(page.getByLabel('Mit ganzer Startdiele beginnen')).toBeChecked();
   await page.getByLabel('Fester Versatz je Reihe').fill('400'); await page.getByLabel('Fester Versatz je Reihe').press('Enter');
   await page.getByLabel('Mit ganzer Startdiele beginnen').check();
@@ -84,7 +98,7 @@ test('uses an exact custom stagger with a full starter and persists both constra
     return [settings?.pattern,settings?.fixedStagger,settings?.startWithFullPlank];
   })).toEqual(['custom',400,true]);
   await page.reload();
-  await expect(page.getByLabel('Verlegemuster')).toHaveValue('custom');
+  await expect(page.getByLabel('Verlegemuster', { exact: true })).toHaveValue('custom');
   await expect(page.getByLabel('Fester Versatz je Reihe')).toHaveValue('400');
   await expect(page.getByLabel('Mit ganzer Startdiele beginnen')).toBeChecked();
 });
@@ -95,8 +109,8 @@ test('chooses repeating patterns, keeps them during package optimization and pre
   const input = page.locator('input[type=file][accept=".json,application/json"]');
   await input.setInputFiles({name:'muster.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(project))});
   await expect(page.getByRole('heading',{name:'Mustervergleich',exact:true})).toBeVisible();
-  await expect(page.getByLabel('Verlegemuster')).toHaveValue('optimized');
-  await page.getByLabel('Verlegemuster').selectOption('half');
+  await expect(page.getByLabel('Verlegemuster', { exact: true })).toHaveValue('optimized');
+  await page.getByLabel('Verlegemuster', { exact: true }).selectOption('half');
   await expect(page.getByText('Automatisch geplant',{exact:true})).toBeVisible();
   const paths = page.locator('svg path > title'), colored = await paths.locator('..').evaluateAll(nodes => nodes.map(n => n.getAttribute('fill')));
   expect(new Set(colored).size).toBeGreaterThan(1);
@@ -106,23 +120,23 @@ test('chooses repeating patterns, keeps them during package optimization and pre
   expect(new Set(await paths.locator('..').evaluateAll(nodes => nodes.map(n => n.getAttribute('fill')))).size).toBe(1);
   expect(await paths.locator('..').evaluateAll(nodes => nodes.map(n => n.getAttribute('d')))).toEqual(geometry);
   await expect(page.getByTestId('new-boards')).toHaveText(count!);
-  await page.getByLabel('Verlegemuster').selectOption('third'); await expect(page.getByText('Automatisch geplant',{exact:true})).toBeVisible();
+  await page.getByLabel('Verlegemuster', { exact: true }).selectOption('third'); await expect(page.getByText('Automatisch geplant',{exact:true})).toBeVisible();
   await page.getByRole('button',{name:'Pakete optimieren',exact:true}).click();
   await expect(page.locator('.notice')).toContainText('Beste gefundene Planung',{timeout:30000});
-  await expect(page.getByLabel('Verlegemuster')).toHaveValue('third');
+  await expect(page.getByLabel('Verlegemuster', { exact: true })).toHaveValue('third');
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('plankplan.project.v1') ?? 'null')?.floors[0].rooms[0].layout.pattern)).toBe('third');
   const downloading = page.waitForEvent('download'); await page.getByRole('button',{name:'JSON speichern',exact:true}).click();
   await input.setInputFiles((await (await downloading).path())!); await expect(page.getByRole('status')).toContainText('Projekt einschließlich');
-  await expect(page.getByLabel('Verlegemuster')).toHaveValue('third');
+  await expect(page.getByLabel('Verlegemuster', { exact: true })).toHaveValue('third');
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('plankplan.project.v1') ?? 'null')?.floors[0].rooms[0].layout.pattern)).toBe('third');
-  await page.reload(); await expect(page.getByLabel('Verlegemuster')).toHaveValue('third');
+  await page.reload(); await expect(page.getByLabel('Verlegemuster', { exact: true })).toHaveValue('third');
   await page.getByLabel('Zuschnitte farbig markieren').uncheck();
   await page.screenshot({path:'test-results/plankplan-third-pattern.png',fullPage:true});
-  await page.getByLabel('Verlegemuster').selectOption('half');
+  await page.getByLabel('Verlegemuster', { exact: true }).selectOption('half');
   await page.screenshot({path:'test-results/plankplan-half-pattern.png',fullPage:true});
 });
 
-test('keeps wheel zoom inside the canvas, including controls and zoom limits, while the rest of the page scrolls', async ({ page }) => {
+test('keeps wheel zoom inside the canvas while sidebars scroll independently', async ({ page }) => {
   const errors: string[] = [];
   page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
   await page.goto('/');
@@ -146,8 +160,18 @@ test('keeps wheel zoom inside the canvas, including controls and zoom limits, wh
   await svg.hover(); const minimumWidth = await width(), limitScroll = await scroll();
   expect(minimumWidth).toBeGreaterThanOrEqual(100); expect(minimumWidth * .88).toBeLessThan(100);
   await page.mouse.wheel(0, -400); await settle(); expect(await width()).toBe(minimumWidth); expect(await scroll()).toEqual(limitScroll);
-  await page.getByRole('link', { name: /PlankPlan/ }).hover(); const outsideScroll = await scroll();
-  await page.mouse.wheel(0, 400); await expect.poll(async () => (await scroll()).y).toBeGreaterThan(outsideScroll.y);
+  const left=page.locator('.setup-panel'),right=page.locator('.results-panel');
+  const panelScroll=(panel: typeof left)=>panel.evaluate(node=>node.scrollTop);
+  const canvasBox=await svg.boundingBox(),canvasWidth=await width(),pageScroll=await scroll();
+  await left.hover(); const leftBefore=await panelScroll(left),rightBefore=await panelScroll(right);
+  await page.mouse.wheel(0,400); await expect.poll(()=>panelScroll(left)).toBeGreaterThan(leftBefore);
+  expect(await panelScroll(right)).toBe(rightBefore); expect(await scroll()).toEqual(pageScroll);
+  await right.hover(); const leftAfter=await panelScroll(left);
+  await page.mouse.wheel(0,400); await expect.poll(()=>panelScroll(right)).toBeGreaterThan(rightBefore);
+  expect(await panelScroll(left)).toBe(leftAfter); expect(await scroll()).toEqual(pageScroll);
+  expect(await svg.boundingBox()).toEqual(canvasBox); expect(await width()).toBe(canvasWidth);
+  await right.evaluate(node=>{node.scrollTop=node.scrollHeight;}); await right.hover();
+  await page.mouse.wheel(0,600); await settle(); expect(await scroll()).toEqual(pageScroll);
   expect(errors).toEqual([]);
 });
 
@@ -162,7 +186,7 @@ test('changes real material, optimizes the offset, persists and round-trips a pr
   await page.getByLabel('Manuelle Rasterplanung aktivieren').check();
   await page.getByRole('button', { name: 'Quer-Offset optimieren' }).click();
   await expect(page.getByRole('status')).toContainText('Quer-Offset optimiert', { timeout: 20000 });
-  const offset = await page.getByLabel('Quer-Offset').inputValue();
+  const offset = await page.getByLabel('Quer-Offset', { exact: true }).inputValue();
   await page.getByRole('button', { name: 'Etage hinzufügen' }).click();
   await page.getByLabel('Etagenname').fill('Dachgeschoss');
   await page.getByRole('button', { name: 'Räume aus JSON einfügen' }).click();
@@ -173,7 +197,7 @@ test('changes real material, optimizes the offset, persists and round-trips a pr
   const download = await downloadPromise; const path = await download.path(); expect(path).toBeTruthy();
   await page.locator('input[type=file][accept=".json,application/json"]').setInputFiles(path!);
   await expect(page.getByRole('status')).toContainText('Projekt einschließlich');
-  await expect(page.getByLabel('Quer-Offset')).toHaveValue(offset);
+  await expect(page.getByLabel('Quer-Offset', { exact: true })).toHaveValue(offset);
   await page.waitForTimeout(500); await page.reload();
   await expect(page.getByLabel('Dielenbreite')).toHaveValue('246');
   await expect(page.getByRole('button', { name: 'Dachgeschoss' })).toBeVisible();
@@ -183,7 +207,7 @@ test('changes real material, optimizes the offset, persists and round-trips a pr
 test('automatically corrects short end pieces, shows packs and excludes disabled rooms', async ({ page }) => {
   await page.goto('/');
   await expect(page.getByText('Automatisch geplant', { exact: true })).toBeVisible();
-  await expect(page.getByLabel('Quer-Offset')).not.toBeVisible();
+  await expect(page.getByLabel('Quer-Offset', { exact: true })).not.toBeVisible();
   const titles = await page.locator('svg path > title').allTextContents();
   expect(titles.length).toBeGreaterThan(0);
   for (const title of titles) {
@@ -197,7 +221,7 @@ test('automatically corrects short end pieces, shows packs and excludes disabled
   await page.getByLabel('Laminat in diesem Raum verlegen').uncheck();
   await expect(page.locator('svg path > title')).toHaveCount(0);
   await expect(page.locator('.package-result')).toHaveCount(0);
-  await expect(page.getByText('In diesem Raum ist Laminat ausgeschaltet.', { exact: false })).toBeVisible();
+  await expect(page.getByText('Laminat ausgeschaltet. Kein Materialbedarf.', { exact: true })).toBeVisible();
   await page.waitForTimeout(500); await page.reload();
   await expect(page.getByLabel('Laminat in diesem Raum verlegen')).not.toBeChecked();
   await page.getByLabel('Laminat in diesem Raum verlegen').check();
@@ -445,7 +469,8 @@ test('calibrates and replaces backgrounds without scaling existing rooms and res
   await page.getByLabel('Reale Strecke').fill('6000'); await page.getByLabel('Reale Strecke').press('Enter');
   await page.getByLabel('Raumkonturen ebenfalls skalieren').check();
   await page.getByRole('button', {name:'Maßstab übernehmen',exact:true}).click();
-  await expect.poll(async () => (await storedFloor()).rooms[0].polygon[1].x).toBeCloseTo(10400, 3);
+  // Browser pointer coordinates have subpixel rounding; stay within the engine's 0.01 mm precision.
+  await expect.poll(async () => (await storedFloor()).rooms[0].polygon[1].x).toBeCloseTo(10400, 2);
   await page.getByRole('button', {name:'Rückgängig',exact:true}).click();
   await expect.poll(async () => (await storedFloor()).rooms).toEqual(original.rooms);
   await page.screenshot({path:'test-results/plankplan-safe-calibration.png',fullPage:true});
