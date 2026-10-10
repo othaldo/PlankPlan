@@ -295,7 +295,7 @@ function App() {
           <div className="button-row"><button className="secondary" disabled={!canDraw} onClick={() => selectTool('draw')}><Plus size={15} />Raum zeichnen</button>
             <button className="icon-button" title="Räume aus JSON einfügen" onClick={() => setRoomsDialog(true)}><ArrowUpFromLine size={16} /></button></div>
           {room && <><label className="field"><span>Raumname</span><input aria-label="Raumname" value={room.name} maxLength={120} onChange={e => updateRoom(r => ({ ...r, name: e.target.value || 'Raum' }))} /></label>
-            <RoomDimensions key={room.id} room={room} onChange={polygon => updateRoom(r => ({ ...r, polygon }))} onError={setNotice} />
+            <RoomDimensions key={room.id} room={room} rooms={floor.rooms} onChange={polygon => updateRoom(r => ({ ...r, polygon }))} onError={setNotice} />
             <label className="toggle-field"><input type="checkbox" checked={room.flooringEnabled !== false} onChange={e => updateRoom(r => ({ ...r, flooringEnabled: e.target.checked }))} />Laminat in diesem Raum verlegen</label>
             <div className="button-row"><button className="text-button muted" onClick={() => {
               if (floor.rooms.length >= 100) { setNotice('Maximal 100 Räume pro Etage.'); return; }

@@ -1,6 +1,19 @@
 import type { Point } from '../model/types';
 import { bounds, signedArea, validatePolygon } from './polygon';
 
+export type RoomEdge = 'left' | 'right' | 'top' | 'bottom';
+/** Translate the entire contour so one outer boundary reaches the target coordinate. */
+export function positionRoom(polygon: Point[], edge: RoomEdge, coordinate: number): Point[] {
+  const error=validatePolygon(polygon); if(error) throw new Error(error);
+  if(!Number.isFinite(coordinate)) throw new Error('Die Raumposition muss eine endliche Zahl sein.');
+  const b=bounds(polygon), horizontal=edge==='left'||edge==='right';
+  const current=edge==='left'?b.minX:edge==='right'?b.maxX:edge==='top'?b.minY:b.maxY;
+  const delta=coordinate-current;
+  const next=polygon.map(p=>({x:p.x+(horizontal?delta:0),y:p.y+(horizontal?0:delta)}));
+  const invalid=validatePolygon(next); if(invalid) throw new Error(invalid);
+  return next;
+}
+
 /** Change the outer dimensions in plan axes, keeping the top-left corner fixed. */
 export function resizeRoom(polygon: Point[], width: number, depth: number): Point[] {
   const error = validatePolygon(polygon); if (error) throw new Error(error);

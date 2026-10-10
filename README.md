@@ -140,3 +140,5 @@ Geplante Erweiterungen: modellierte Wiederverwendung von Schräg-/Längszuschnit
 Die vollständige übernommene Anforderung und die MVP-Abgrenzung stehen in `docs/SPECIFICATION.md`.
 
 Unter **Pakete gesamt → Ohne Reststücktausch** lässt sich der Austausch zwischen Räumen und Etagen abschalten. Jeder Raum verwendet dann nur seine eigenen Reststücke, auch bei der Paketoptimierung. Paketbedarf und Reserve bleiben projektweit berechnet. Die Einstellung wird im Projekt und im JSON gespeichert. Bestehende Projekte behalten ohne diese Einstellung den bisherigen Reststücktausch.
+
+Unter **Raumposition** zeigen Oben/Unten die Y-Koordinaten und Links/Rechts die X-Koordinaten der Außenbegrenzung. Eine Eingabe verschiebt die gesamte Kontur bei gleicher Form und Größe. **Raumpositionen vergleichen** zeigt alle Räume derselben Etage, zum Beispiel um die obere Y-Koordinate abzugleichen. Die Werte aktualisieren sich nach dem Verschieben im Canvas.

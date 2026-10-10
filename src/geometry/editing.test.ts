@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { calibrateFloor } from './calibration';
-import { resizeRoom, changeCorner } from './dimensions';
+import { resizeRoom, changeCorner, positionRoom } from './dimensions';
 import { bounds, signedArea } from './polygon';
 import { demoProject } from '../model/types';
 import type { Floor } from '../model/types';
@@ -41,6 +41,20 @@ describe('image calibration protects real room coordinates', () => {
 
 describe('manual dimensions', () => {
   const polygon = [{x:100,y:200},{x:4100,y:200},{x:4100,y:2200},{x:2100,y:2200},{x:2100,y:3200},{x:100,y:3200}];
+  it.each(['left','right','top','bottom'] as const)('positions the %s boundary while preserving all edges and area',edge=>{
+    const next=positionRoom(polygon,edge,-150.5),b=bounds(next);
+    expect(edge==='left'?b.minX:edge==='right'?b.maxX:edge==='top'?b.minY:b.maxY).toBe(-150.5);
+    expect(signedArea(next)).toBeCloseTo(signedArea(polygon));
+    for(let i=1;i<polygon.length;i++) {
+      expect(next[i].x-next[0].x).toBeCloseTo(polygon[i].x-polygon[0].x);
+      expect(next[i].y-next[0].y).toBeCloseTo(polygon[i].y-polygon[0].y);
+    }
+    expect(polygon[0]).toEqual({x:100,y:200});
+  });
+  it('rejects invalid translations including a valid boundary that puts another corner outside limits',()=>{
+    for(const n of [NaN,Infinity,-Infinity]) expect(()=>positionRoom(polygon,'top',n)).toThrow();
+    expect(()=>positionRoom(polygon,'left',999999)).toThrow(/Raumkoordinaten/);
+  });
   it('resizes a concave room proportionally while keeping its origin', () => {
     const next = resizeRoom(polygon, 8000, 1500);
     expect(bounds(next)).toEqual({minX:100,minY:200,maxX:8100,maxY:1700});

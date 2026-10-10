@@ -1,4 +1,37 @@
 import { expect, test } from '@playwright/test';
+test('compares room boundaries and translates a whole room by coordinates or dragging',async({page})=>{
+  await page.goto('/');
+  const makeRoom=(id:string,name:string,x:number,y:number)=>({id,name,flooringEnabled:false,polygon:[{x,y},{x:x+3000,y},{x:x+3000,y:y+2000},{x,y:y+2000}],layout:{direction:0,offsetX:0,offsetY:0}});
+  const project={version:1,name:'Positionen',flooring:{name:'Test',length:1285,width:194,thickness:8,expansionGap:10,minRowWidth:60,minEndPieceLength:300,jointOffset:400},
+    floors:[{id:'f',name:'Etage',background:null,calibration:null,rooms:[makeRoom('a','Raum A',0,400),makeRoom('b','Raum B',5000,700)]}]};
+  await page.locator('input[type=file][accept=".json,application/json"]').setInputFiles({name:'positionen.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(project))});
+  await expect(page.getByLabel('Oben (Y)',{exact:true})).toHaveValue('400');
+  await page.getByText('Raumpositionen vergleichen',{exact:true}).click();
+  const table=page.getByTestId('room-positions');
+  await expect(table.locator('tbody tr').filter({hasText:'Raum B'}).locator('td').nth(1)).toHaveText('700');
+  await page.locator('.room-item').filter({hasText:'Raum B'}).click();
+  const edit=async(label:string,value:string)=>{const input=page.getByLabel(label,{exact:true});await input.fill(value);await input.press('Enter');};
+  await edit('Oben (Y)','400'); await expect(page.getByLabel('Unten (Y)',{exact:true})).toHaveValue('2400');
+  await expect(page.getByLabel('Breite des Raums',{exact:true})).toHaveValue('3000');
+  await page.getByText('Raumpositionen vergleichen',{exact:true}).click();
+  for(const row of await table.locator('tbody tr').all()) await expect(row.locator('td').nth(1)).toHaveText('400');
+  await page.getByRole('button',{name:'Raum verschieben',exact:true}).click();
+  await page.getByRole('checkbox',{name:/An anderen Raumkanten einrasten/}).uncheck();
+  const svg=page.getByRole('img',{name:'Interaktiver Verlegeplan'});
+  const q=await svg.evaluate(node=>new DOMPoint(6500,1400).matrixTransform((node as SVGSVGElement).getScreenCTM()!).toJSON());
+  await page.mouse.move(q.x,q.y); await page.mouse.down(); await page.mouse.move(q.x-40,q.y+25,{steps:5}); await page.mouse.up();
+  await expect(page.getByLabel('Oben (Y)',{exact:true})).not.toHaveValue('400');
+  await expect(page.getByLabel('Breite des Raums',{exact:true})).toHaveValue('3000');
+  await expect(page.getByLabel('Tiefe des Raums',{exact:true})).toHaveValue('2000');
+  await edit('Rechts (X)','12000'); await expect(page.getByLabel('Links (X)',{exact:true})).toHaveValue('9000');
+  await edit('Unten (Y)','3500'); await expect(page.getByLabel('Oben (Y)',{exact:true})).toHaveValue('1500');
+  await edit('Links (X)','-100'); await expect(page.getByLabel('Rechts (X)',{exact:true})).toHaveValue('2900');
+  await page.getByRole('button',{name:'Rückgängig',exact:true}).click(); await expect(page.getByLabel('Links (X)',{exact:true})).toHaveValue('9000');
+  const saved=()=>page.evaluate(()=>JSON.parse(localStorage.getItem('plankplan.project.v1')??'null')?.floors[0].rooms[1].polygon[0]);
+  await expect.poll(saved).toEqual({x:9000,y:1500}); await page.reload();
+  await page.locator('.room-item').filter({hasText:'Raum B'}).click(); await expect(page.getByLabel('Oben (Y)',{exact:true})).toHaveValue('1500');
+});
+
 test('uses wheel to pan, Shift for horizontal pan and Ctrl or Cmd to zoom at the pointer', async ({ page }) => {
   await page.goto('/');
   const svg=page.getByRole('img',{name:'Interaktiver Verlegeplan'});
