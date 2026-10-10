@@ -11,7 +11,7 @@ import type { MaterialContext, MaterialState, Requirement } from '../flooring/ma
 
 interface Span { minX: number; maxX: number }
 interface Candidate { origin: number; phase: number; spans: Span[]; joints: number[]; count: number; first: number; last: number; cutCount: number; requirements: Requirement[] }
-interface State { candidate: Candidate; cost: number; previous?: State; row: number; material: MaterialState }
+interface State { candidate: Candidate; cost: number; missedContinuations: number; previous?: State; row: number; material: MaterialState }
 // Full length at the wall must be a rectangular starter, not an angled wall cut.
 function fullStarter(c: Candidate, f: Flooring) { return Math.abs(c.first - f.length) < EPS && c.requirements[0].rectangular; }
 function closestJointDistance(a: { joints: number[]; spans: Span[] }, b: { joints: number[]; spans: Span[] }): number {
@@ -140,6 +140,14 @@ export function findFixedStagger(room: Room, f: Flooring): { fixedStagger?: numb
   return { layout: result ?? emptyLayout(room, ['Kein passender fester Versatz gefunden.']), candidates };
 }
 export function planAutomatic(room: Room, f: Flooring, initial: MaterialState = initialMaterial(), context?: MaterialContext) {
+  const baseline=searchAutomatic(room,f,initial,context,false);
+  if(room.layout.pattern && room.layout.pattern!=='optimized') return baseline;
+  const preferred=searchAutomatic(room,f,initial,context,true);
+  // Keep the previous search as an incumbent: a convenience preference must
+  // never increase material consumption or replace a feasible plan with failure.
+  return preferred.layout.feasible && (!baseline.layout.feasible || preferred.inventory.newBoards<=baseline.inventory.newBoards) ? preferred : baseline;
+}
+function searchAutomatic(room: Room, f: Flooring, initial: MaterialState, context: MaterialContext | undefined, preferContinuation: boolean) {
   f = roomFlooring(room, f);
   const failure = (warnings: string[]) => ({ layout: emptyLayout(room, warnings), inventory: initial });
   const prepared = prepareRoom(room, f);
@@ -157,6 +165,9 @@ export function planAutomatic(room: Room, f: Flooring, initial: MaterialState = 
   const uniqueIncoming = [...new Map(initial.offcuts.map(s => [`${s.edge}:${s.length.toFixed(2)}`, s])).values()].sort((a, b) => a.length - b.length);
   const incomingCandidates = uniqueIncoming.length <= 32 ? uniqueIncoming : Array.from({ length: 32 }, (_, i) => uniqueIncoming[Math.floor(i * (uniqueIncoming.length - 1) / 31)]);
   let states: State[] = [];
+  const compareStates=(a:State,b:State)=> preferContinuation
+    ? a.material.newBoards-b.material.newBoards || a.missedContinuations-b.missedContinuations || a.cost-b.cost
+    : a.cost-b.cost;
   for (let row = 0; row < rows; row++) {
     const y = originY + row * f.width;
     const band = polygonClipping.intersection(prepared.local, rectangle(b.minX - 1, y, b.maxX - b.minX + 2, f.width));
@@ -177,6 +188,11 @@ export function planAutomatic(room: Room, f: Flooring, initial: MaterialState = 
     // Material-aware candidates include using an existing offcut at its full
     // usable length. Fugenversatz can require trimming it or saving it for later.
     const stocks = states.length ? states.slice(0, 8).flatMap(state => state.material.offcuts.slice(-8)) : incomingCandidates;
+    if(preferContinuation) for(const state of states) {
+      const endId=state.candidate.requirements.at(-1)!.id;
+      const stock=state.material.offcuts.find(s=>s.edge==='right' && s.sourcePlacementId===endId && s.sourceRoomKey===context?.roomKey);
+      if(stock) add(spans[0].minX+stock.length);
+    }
     for (const stock of stocks) {
       if (stock.edge === 'right') add(spans[0].minX + stock.length);
       else add(spans[spans.length - 1].maxX - stock.length);
@@ -185,10 +201,20 @@ export function planAutomatic(room: Room, f: Flooring, initial: MaterialState = 
     const choices = rowPhases.map(phase => candidate(band, y, phase, row, f)).filter((c): c is Candidate => !!c && (states.length > 0 || !room.layout.startWithFullPlank || fullStarter(c, f)));
     if (!choices.length) return failure([`Reihe ${row + 1}: Keine Verlegung${!states.length && room.layout.startWithFullPlank ? ' mit ganzer Startdiele' : ''} mit allen Teilstücken mindestens ${f.minEndPieceLength} mm gefunden. Raumkontur, Richtung oder Verlegeregel prüfen. Es werden keine zu kurzen Dielen eingeplant.`]);
     const next: State[] = [];
+    const continuation=new Map<State,string>();
+    if(preferContinuation) for(const previous of states) {
+      if(row!==previous.row+1) continue;
+      const endId=previous.candidate.requirements.at(-1)!.id;
+      const stock=previous.material.offcuts.find(s=>s.edge==='right' && s.sourcePlacementId===endId && s.sourceRoomKey===context?.roomKey);
+      if(!stock) continue;
+      const start=candidate(band,y,mod(spans[0].minX+stock.length,f.length),row,f);
+      if(start && start.requirements[0].rectangular && Math.abs(start.requirements[0].width-f.width)<.01 &&
+        Math.abs(start.first-stock.length)<.01 && jointsCompatible(previous.candidate,start,minimumJoint)) continuation.set(previous,stock.id);
+    }
     for (const choice of choices) {
       if (!states.length) {
         const material = allocateMaterial(choice.requirements, f, initial, context);
-        next.push({ candidate: choice, row, material, cost: (material.newBoards - initial.newBoards) * 100000 + choice.cutCount * 10 + f.length - choice.first }); continue;
+        next.push({ candidate: choice, row, material, missedContinuations: 0, cost: (material.newBoards - initial.newBoards) * 100000 + choice.cutCount * 10 + f.length - choice.first }); continue;
       }
       let best: State | undefined;
       for (const previous of states) {
@@ -196,12 +222,15 @@ export function planAutomatic(room: Room, f: Flooring, initial: MaterialState = 
         const distance = mod(choice.phase - previous.candidate.phase - f.jointOffset, f.length);
         const material = allocateMaterial(choice.requirements, f, previous.material, context);
         const cost = previous.cost + (material.newBoards - previous.material.newBoards) * 100000 + choice.cutCount * 10 + Math.min(distance, f.length - distance);
-        if (!best || cost < best.cost) best = { candidate: choice, row, cost, previous, material };
+        const expected=continuation.get(previous),start=material.allocations[0];
+        const missedContinuations=previous.missedContinuations + Number(!!expected && (start.reusedFrom!==expected || start.cutLoss>EPS));
+        const state={candidate:choice,row,cost,missedContinuations,previous,material};
+        if (!best || compareStates(state,best)<0) best = state;
       }
       if (best) next.push(best);
     }
     if (!next.length) return failure([`Reihe ${row + 1}: Keine Kombination mit mindestens ${f.minEndPieceLength} mm Stücklänge und ${minimumJoint} mm Fugenversatz gefunden. Bitte Raumrichtung oder Regeln prüfen. Es wird kein ungültiger Plan ausgegeben.`]);
-    states = next.sort((a, b) => a.cost - b.cost).slice(0, 32);
+    states = next.sort(compareStates).slice(0, 32);
   }
   const origins = new Map<number, number>();
   for (let state: State | undefined = states[0]; state; state = state.previous) origins.set(state.row, state.candidate.origin);

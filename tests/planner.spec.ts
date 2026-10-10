@@ -1,4 +1,19 @@
 import { expect, test } from '@playwright/test';
+test('uses the previous row end as the next starter for the 4010 mm room after package optimization and reload',async({page})=>{
+  await page.goto('/');
+  const project={version:1,name:'Direkte Reststückfolge',shareOffcuts:false,
+    flooring:{name:'Test',length:1285,width:194,thickness:8,expansionGap:10,minRowWidth:60,minEndPieceLength:100,jointOffset:0,minJointOffset:0,boardsPerPack:10,reservePercent:5},
+    floors:[{id:'f',name:'Etage',background:null,calibration:null,rooms:[{id:'r',name:'Raum 1',polygon:[{x:0,y:0},{x:7760,y:0},{x:7760,y:4010},{x:0,y:4010}],layout:{direction:90,offsetX:0,offsetY:0,firstRowWidth:'full',startWithFullPlank:true}}]}]};
+  await page.locator('input[type=file][accept=".json,application/json"]').setInputFiles({name:'folge.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(project))});
+  const starter=page.locator('svg path > title').filter({hasText:'Rest vom Reihenende, Reihe 1'});
+  await expect(starter.first()).toHaveText(/1147|1\.147/);
+  await page.getByRole('button',{name:'Pakete optimieren',exact:true}).click();
+  await expect(page.locator('.notice')).toContainText('Beste gefundene Planung');
+  await expect(starter.first()).toHaveText(/1147|1\.147/);
+  await expect.poll(()=>page.evaluate(()=>JSON.parse(localStorage.getItem('plankplan.project.v1')??'null')?.materialPlan?.signature)).toBeTruthy();
+  await page.reload(); await expect(starter.first()).toHaveText(/1147|1\.147/);
+});
+
 test('compares room boundaries and translates a whole room by coordinates or dragging',async({page})=>{
   await page.goto('/');
   const makeRoom=(id:string,name:string,x:number,y:number)=>({id,name,flooringEnabled:false,polygon:[{x,y},{x:x+3000,y},{x:x+3000,y:y+2000},{x,y:y+2000}],layout:{direction:0,offsetX:0,offsetY:0}});

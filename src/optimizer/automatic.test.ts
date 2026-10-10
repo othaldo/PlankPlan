@@ -81,6 +81,27 @@ describe('automatic physical laying plan', () => {
     expect(starter!.usedLength).toBeGreaterThanOrEqual(299.99);
     expect(Number(starter!.material!.reusedFromPlacementId!.split(':')[0])).toBeLessThan(starter!.row);
   });
+  it.each([0,100])('starts the next row with the 1147 mm end offcut at %s mm minimum joint spacing',minimum=>{
+    const r=room(7760,4010); r.layout={...r.layout,direction:90,firstRowWidth:'full',startWithFullPlank:true};
+    const f={...flooring,minEndPieceLength:100,minJointOffset:minimum,jointOffset:0};
+    const plan=layoutRoom(r,f); expect(plan.feasible).toBe(true);
+    expect(plan.rows[0].firstLength).toBeCloseTo(1285); expect(plan.rows[0].lastLength).toBeCloseTo(135);
+    expect(plan.rows[1].firstLength).toBeCloseTo(1147); expect(plan.rows[1].lastLength).toBeCloseTo(273);
+    const starter=plan.boards.find(b=>b.row===1 && b.column===0)!;
+    expect(starter.material).toMatchObject({reusedFromPlacementId:'0:3',stockLength:1147,cutLoss:0});
+    // The previous search used 126 new boards for this room.
+    expect(plan.newBoards).toBeLessThanOrEqual(126);
+    expect(plan.boards.flatMap(b=>b.pieceLengths).every(n=>n>=99.99)).toBe(true);
+  });
+  it('keeps a 300 mm joint rule even when the previous remainder would provide only 138 mm',()=>{
+    const r=room(7760,4010); r.layout={...r.layout,direction:90,firstRowWidth:'full',startWithFullPlank:true};
+    const plan=layoutRoom(r,{...flooring,minEndPieceLength:100,minJointOffset:300,jointOffset:0});
+    expect(plan.feasible).toBe(true); expect(plan.rows[1].firstLength).not.toBeCloseTo(1147);
+    for(let i=1;i<plan.rows.length;i++) {
+      const spans=(index:number)=>plan.boards.filter(b=>b.row===index).flatMap(b=>b.polygon.map(p=>bounds(polygonPoints([p]).map(q=>rotate(q,-90)))));
+      expect(jointsCompatible({joints:plan.rows[i-1].joints,spans:spans(i-1)},{joints:plan.rows[i].joints,spans:spans(i)},300)).toBe(true);
+    }
+  });
   it.each([1500, 2500, 3800, 5200, 6500])('satisfies end lengths and real neighbouring joints for a %s mm room', length => { assertPlan(room(length)); });
   it('emits no invalid boards or material quantities for an impossible 200 mm room', () => {
     const plan = layoutRoom(room(200), flooring);

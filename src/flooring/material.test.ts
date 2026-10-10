@@ -5,6 +5,14 @@ import { PRESETS } from '../model/types';
 const f = { ...PRESETS[0], sawKerf: 3 };
 const piece = (id: string, length: number, role: Requirement['role'], rectangular = true, width = 194): Requirement => ({ id, length, role, width, area: length * width, rectangular });
 describe('physical offcuts with factory click edges', () => {
+  it('uses the previous row end before an equally sized older remainder',()=>{
+    const stock={length:600,width:194,edge:'right' as const,sourceBoardId:'D1',sourceRoomKey:'room',sourceRoomName:'Raum',sourceFloorName:'Etage',cutRole:'end' as const};
+    const result=allocateMaterial([piece('2:0',600,'start')],f,{newBoards:2,offcuts:[
+      {...stock,id:'older',sourcePlacementId:'0:3'}, {...stock,id:'direct',sourceBoardId:'D2',sourcePlacementId:'1:3'}
+    ]},{roomKey:'room',roomName:'Raum',floorName:'Etage'});
+    expect(result.allocations[0]).toMatchObject({reusedFrom:'direct',sourceBoardId:'D2',cutLoss:0});
+    expect(result.offcuts.map(s=>s.id)).toEqual(['older']);
+  });
   it('uses an end offcut as the next starter and subtracts saw kerf', () => {
     const first = allocateMaterial([piece('0:4', 800, 'end')], f);
     expect(first.offcuts[0]).toMatchObject({ length: 482, edge: 'right', sourceBoardId: 'D1' });

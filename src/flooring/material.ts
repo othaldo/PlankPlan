@@ -23,8 +23,11 @@ export function allocateMaterial(requirements: Requirement[], f: Flooring, previ
   for (const item of requirements) {
     const eligible = item.rectangular && Math.abs(item.width - f.width) < .01 && item.role !== 'other' && item.length < f.length - .01;
     const edge = item.role === 'start' ? 'right' : 'left';
+    const previousRow=Number(item.id.split(':')[0])-1;
+    const direct=(s:Offcut)=>item.role==='start' && s.cutRole==='end' && s.sourceRoomKey===context?.roomKey && Number(s.sourcePlacementId.split(':')[0])===previousRow;
     const suitable = eligible ? offcuts.filter(s => s.edge === edge && Math.abs(s.width - item.width) < .01 &&
-      (Math.abs(s.length - item.length) < .01 || s.length >= item.length + kerf - .01)).sort((a, b) => a.length - b.length) : [];
+      (Math.abs(s.length - item.length) < .01 || s.length >= item.length + kerf - .01)).sort((a, b) =>
+        Math.abs(a.length-b.length)<.01 ? Number(direct(b))-Number(direct(a)) : a.length-b.length) : [];
     const stock = suitable[0];
     let sourceBoardId: string, stockLength: number, reusedFrom: string | undefined;
     if (stock) {
