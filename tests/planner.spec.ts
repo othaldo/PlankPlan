@@ -1,4 +1,21 @@
 import { expect, test } from '@playwright/test';
+test('toggles spacer suggestions independently of boards and updates them for room gap and disabled rooms',async({page})=>{
+  await page.goto('/');
+  const toggle=page.getByRole('checkbox',{name:'Abstandskeile anzeigen',exact:true}),markers=page.getByTestId('spacer-marker');
+  await expect(toggle).not.toBeChecked(); await expect(markers).toHaveCount(0);
+  await toggle.check(); await expect.poll(()=>markers.count()).toBeGreaterThan(0);
+  await page.screenshot({path:'test-results/plankplan-spacer-overlay.png',fullPage:true});
+  const count=await markers.count(),before=await markers.first().getAttribute('transform');
+  await page.getByRole('checkbox',{name:'Dielen anzeigen',exact:true}).uncheck(); await expect(markers).toHaveCount(count);
+  const gap=page.getByLabel('Bewegungsfuge',{exact:true}); await gap.fill('20'); await gap.press('Enter');
+  await expect.poll(()=>markers.first().getAttribute('transform')).not.toBe(before);
+  await gap.fill('0'); await gap.press('Enter'); await expect(markers).toHaveCount(0);
+  await gap.fill('10'); await gap.press('Enter'); await expect.poll(()=>markers.count()).toBeGreaterThan(0);
+  await page.getByRole('checkbox',{name:'Laminat in diesem Raum verlegen',exact:true}).uncheck(); await expect(markers).toHaveCount(0);
+  await page.getByRole('checkbox',{name:'Laminat in diesem Raum verlegen',exact:true}).check(); await expect.poll(()=>markers.count()).toBeGreaterThan(0);
+  await toggle.uncheck(); await expect(markers).toHaveCount(0);
+});
+
 test('uses the previous row end as the next starter for the 4010 mm room after package optimization and reload',async({page})=>{
   await page.goto('/');
   const project={version:1,name:'Direkte Reststückfolge',shareOffcuts:false,

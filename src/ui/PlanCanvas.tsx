@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import type { MultiPolygon } from 'polygon-clipping';
 import { bounds, signedArea, validatePolygon } from '../geometry/polygon';
 import type { Layout } from '../flooring/layout';
-import type { Floor, Point, Room } from '../model/types';
+import type { Floor, Flooring, Point, Room } from '../model/types';
+import { roomFlooring } from '../model/types';
+import { spacerPositions } from '../geometry/spacers';
 import { Maximize, Minus, Plus } from 'lucide-react';
 import { alignVertex, snapRoomTranslation, snapToRooms } from '../geometry/snapping';
 import { materialSource } from '../flooring/material';
@@ -17,11 +19,14 @@ export function pathData(polygons: MultiPolygon) {
 }
 const pointsString = (points: Point[]) => points.map(p => `${p.x},${p.y}`).join(' ');
 export function PlanCanvas({ floor, selectedId, layouts, tool, draft, setDraft, calibrationPoints, setCalibrationPoints,
-  onSelect, onRoom, onPolygon, onError, snap, snapRooms, showBoards, showCutColors = true }:
-  { floor: Floor; selectedId: string | null; layouts: Map<string, Layout>; tool: Tool;
+  onSelect, onRoom, onPolygon, onError, snap, snapRooms, showBoards, showCutColors = true, showSpacers = false, flooring }:
+  { floor: Floor; flooring: Flooring; selectedId: string | null; layouts: Map<string, Layout>; tool: Tool;
     draft: Point[]; setDraft: (p: Point[]) => void; calibrationPoints: Point[]; setCalibrationPoints: (p: Point[]) => void;
     onSelect: (id: string) => void; onRoom: (polygon: Point[]) => void; onPolygon: (id: string, polygon: Point[]) => void;
-    onError: (message: string) => void; snap: number; snapRooms: boolean; showBoards: boolean; showCutColors?: boolean }) {
+    onError: (message: string) => void; snap: number; snapRooms: boolean; showBoards: boolean; showCutColors?: boolean; showSpacers?: boolean }) {
+  const spacers=useMemo(()=>new Map(floor.rooms.map(room=>[room.id,
+    showSpacers && room.flooringEnabled!==false && layouts.get(room.id)?.feasible
+      ? spacerPositions(room.polygon,roomFlooring(room,flooring).expansionGap) : []])),[floor.rooms,flooring,layouts,showSpacers]);
   const svg = useRef<SVGSVGElement>(null);
   const canvas = useRef<HTMLDivElement>(null);
   const spaceHeld = useRef(false), canvasHovered = useRef(false);
@@ -267,6 +272,13 @@ export function PlanCanvas({ floor, selectedId, layouts, tool, draft, setDraft, 
             <title>{`${room.name} · Reihe ${board.row + 1} · Diele ${board.column + 1}\n${board.cut ? 'Zuschnitt' : 'Ganze Diele'}: ${board.usedLength.toFixed(1)} × ${board.usedWidth.toFixed(1)} mm\nAusgangsdiele: ${board.material?.sourceBoardId ?? 'neu'} · ${board.source.length} × ${board.source.width} mm${board.material?.reusedFromPlacementId ? `\n${materialSource(board.material)}: ${board.material.stockLength.toFixed(1)} mm · ungedreht` : ''}`}</title>
           </path>)}
           <polygon points={pointsString(points)} fill="none" stroke={selected ? '#4b6546' : '#8b9588'} strokeDasharray={room.flooringEnabled === false ? '7 4' : undefined} strokeWidth={selected ? 2.5 : 1.5} vectorEffect="non-scaling-stroke" pointerEvents="none" />
+          {showSpacers && preview?.id!==room.id && !!spacers.get(room.id)?.length &&
+            <g data-testid="spacer-markers" data-room-id={room.id} aria-label={`Abstandskeile: ${room.name}`} pointerEvents="none">
+              {spacers.get(room.id)!.map((s,i)=><g key={i} data-testid="spacer-marker" transform={`translate(${s.point.x} ${s.point.y}) rotate(${s.angle})`}>
+                <path d={`M ${-5*worldPerPixel} ${-3*worldPerPixel} L ${5*worldPerPixel} ${-3*worldPerPixel} L ${3*worldPerPixel} ${3*worldPerPixel} L ${-3*worldPerPixel} ${3*worldPerPixel} Z`}
+                  fill="#3987c9" stroke="#fff" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+              </g>)}
+            </g>}
           <text x={(b.minX + b.maxX) / 2} y={(b.minY + b.maxY) / 2} textAnchor="middle" fontSize={labelSize} className="room-label" pointerEvents="none">{room.name}</text>
           {room.flooringEnabled === false && <text x={(b.minX + b.maxX) / 2} y={(b.minY + b.maxY) / 2 + labelSize * 1.5} textAnchor="middle" fontSize={labelSize * .75} fill="#6a7780" pointerEvents="none">ohne Laminat</text>}
           {selected && tool==='select' && !preview && points.map((p,index)=>{

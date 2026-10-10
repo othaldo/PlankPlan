@@ -59,6 +59,7 @@ function App() {
   const [snapRooms, setSnapRooms] = useState(true);
   const [showBoards, setShowBoards] = useState(true);
   const [showCutColors, setShowCutColors] = useState(true);
+  const [showSpacers, setShowSpacers] = useState(false);
   const [notice, setNotice] = useState(initial.error);
   const [saveState, setSaveState] = useState('Lokal gespeichert');
   const [roomsDialog, setRoomsDialog] = useState(false);
@@ -342,10 +343,11 @@ function App() {
         <PlanCanvas key={`${floor.id}:${canvasVersion}`} floor={floor} selectedId={roomId} layouts={computation.layouts} tool={tool} draft={draft} setDraft={setDraft}
           calibrationPoints={calibrationPoints} setCalibrationPoints={setCalibrationPoints} onSelect={setRoomId} onRoom={addRoom}
           onPolygon={(id, polygon) => updateFloor(f => ({ ...f, rooms: f.rooms.map(r => r.id === id ? { ...r, polygon } : r) }))}
-          onError={setNotice} snap={snap} snapRooms={snapRooms} showBoards={showBoards} showCutColors={showCutColors} />
+          onError={setNotice} snap={snap} snapRooms={snapRooms} showBoards={showBoards} showCutColors={showCutColors} showSpacers={showSpacers} flooring={project.flooring} />
         <div className="canvas-footer">{showCutColors ? <div className="legend"><span><i className="legend-full" />Ganze Diele</span><span><i className="legend-cut" />Zuschnitt</span><span><i className="legend-reused" />Reststück</span></div> : <div className="legend"><span>Fugenbild ohne Zuschnittfarben</span></div>}
           <label><input type="checkbox" checked={showCutColors} onChange={e => setShowCutColors(e.target.checked)} />Zuschnitte farbig markieren</label>
-          <label><input type="checkbox" checked={showBoards} onChange={e => setShowBoards(e.target.checked)} />Dielen anzeigen</label></div>
+          <label><input type="checkbox" checked={showBoards} onChange={e => setShowBoards(e.target.checked)} />Dielen anzeigen</label>
+          <div className="help-row"><label><input type="checkbox" checked={showSpacers} onChange={e => setShowSpacers(e.target.checked)} />Abstandskeile anzeigen</label><HelpInfo label="Abstandskeile">Blaue Symbole zeigen vorgeschlagene Stützpunkte in der eingestellten Bewegungsfuge. Verteilung entlang aller Raumwände mit höchstens 500 mm Abstand und zusätzlichen Punkten nahe den Ecken. Symbole sind zur Lesbarkeit vergrößert. Türöffnungen und Übergänge sind im Raumpolygon nicht gesondert erfasst; dort die Positionen vor Ort anpassen. Keile nach der Verlegung entfernen.</HelpInfo></div></div>
       </main>
       <aside className="results-panel"><span className="eyebrow">VERLEGUNG & ERGEBNIS</span><h2>{room?.name ?? 'Raum auswählen'}</h2>
         {room && room.flooringEnabled !== false ? <><section className="layout-controls"><h3>Verlegeregeln für diesen Raum<HelpInfo label="Raumregeln">Diese Werte gelten nur für {room.name}. Andere Räume behalten ihre Regeln. Bitte an die Verlegeanleitung deines Bodens anpassen.</HelpInfo></h3>
