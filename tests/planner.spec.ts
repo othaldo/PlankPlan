@@ -1,4 +1,35 @@
 import { expect, test } from '@playwright/test';
+test('uses wheel to pan, Shift for horizontal pan and Ctrl or Cmd to zoom at the pointer', async ({ page }) => {
+  await page.goto('/');
+  const svg=page.getByRole('img',{name:'Interaktiver Verlegeplan'});
+  const view=async()=> (await svg.getAttribute('viewBox'))!.split(' ').map(Number);
+  const rooms=()=>page.evaluate(()=>localStorage.getItem('plankplan.project.v1'));
+  await expect.poll(rooms).toBeTruthy(); const saved=await rooms();
+  await svg.hover(); const before=await view();
+  await page.mouse.wheel(0,200); await expect.poll(async()=>(await view())[1]).toBeGreaterThan(before[1]);
+  const vertical=await view(); expect(vertical[0]).toBe(before[0]); expect(vertical.slice(2)).toEqual(before.slice(2));
+  await page.keyboard.down('Shift'); await page.mouse.wheel(0,200); await page.keyboard.up('Shift');
+  await expect.poll(async()=>(await view())[0]).toBeGreaterThan(vertical[0]);
+  const horizontal=await view(); expect(horizontal.slice(1)).toEqual(vertical.slice(1));
+  // Browser-converted Shift events and diagonal trackpad events.
+  await svg.dispatchEvent('wheel',{deltaX:100,deltaY:0,shiftKey:true,bubbles:true,cancelable:true});
+  await expect.poll(async()=>(await view())[0]).toBeGreaterThan(horizontal[0]);
+  const converted=await view(); expect(converted.slice(1)).toEqual(horizontal.slice(1));
+  await svg.dispatchEvent('wheel',{deltaX:50,deltaY:80,bubbles:true,cancelable:true});
+  await expect.poll(async()=>(await view())[1]).toBeGreaterThan(converted[1]);
+  const diagonal=await view(); expect(diagonal[0]).toBeGreaterThan(converted[0]); expect(diagonal.slice(2)).toEqual(converted.slice(2));
+  for(const modifier of ['Control','Meta']) {
+    const start=await view(),box=(await svg.boundingBox())!;
+    const pointer={x:Math.round(box.x+box.width*.7),y:Math.round(box.y+box.height*.3)};
+    await page.mouse.move(pointer.x,pointer.y);
+    const anchor=await svg.evaluate((node,p)=>new DOMPoint(p.x,p.y).matrixTransform((node as SVGSVGElement).getScreenCTM()!.inverse()).toJSON(),pointer);
+    await page.keyboard.down(modifier); await page.mouse.wheel(0,-200); await page.keyboard.up(modifier);
+    await expect.poll(async()=>(await view())[2]).toBeLessThan(start[2]);
+    const after=await view(); expect(after[0]).toBeCloseTo(anchor.x-(anchor.x-start[0])*.88,1); expect(after[1]).toBeCloseTo(anchor.y-(anchor.y-start[1])*.88,1);
+  }
+  expect(await rooms()).toBe(saved); expect(await page.evaluate(()=>[window.scrollX,window.scrollY])).toEqual([0,0]);
+});
+
 test('pans with the horizontal mouse wheel at different zoom levels without changing rooms or page scroll', async ({ page }) => {
   await page.goto('/');
   const svg=page.getByRole('img',{name:'Interaktiver Verlegeplan'});
@@ -10,7 +41,7 @@ test('pans with the horizontal mouse wheel at different zoom levels without chan
   await page.mouse.wheel(250,0); await expect.poll(async()=>(await view())[0]).toBeGreaterThan(before[0]);
   const after=await view(); expect(after.slice(1)).toEqual(before.slice(1));
   await page.mouse.wheel(-250,0); await expect.poll(async()=>(await view())[0]).toBeCloseTo(before[0],4);
-  await page.mouse.wheel(0,-200); await expect.poll(async()=>(await view())[2]).toBeLessThan(before[2]);
+  await page.keyboard.down('Control'); await page.mouse.wheel(0,-200); await page.keyboard.up('Control'); await expect.poll(async()=>(await view())[2]).toBeLessThan(before[2]);
   const zoomed=await view(); await page.mouse.wheel(250,0); await expect.poll(async()=>(await view())[0]).toBeGreaterThan(zoomed[0]);
   expect((await view()).slice(1)).toEqual(zoomed.slice(1)); expect(await rooms()).toEqual(beforeRooms); expect(await pageScroll()).toEqual(beforeScroll);
   // Wheel devices may report pixel, line or page deltas.
@@ -233,21 +264,21 @@ test('keeps wheel zoom inside the canvas while sidebars scroll independently', a
   const scroll = () => page.evaluate(() => ({ x: window.scrollX, y: window.scrollY }));
   const settle = () => page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
   await svg.hover(); const before = await scroll(), initialWidth = await width();
-  await page.mouse.wheel(0, 400); await expect.poll(width).toBeGreaterThan(initialWidth);
+  await page.keyboard.down('Control'); await page.mouse.wheel(0, 400); await page.keyboard.up('Control'); await expect.poll(width).toBeGreaterThan(initialWidth);
   await settle(); expect(await scroll()).toEqual(before);
   const afterZoomOut = await width();
-  await page.mouse.wheel(0, -400); await expect.poll(width).toBeLessThan(afterZoomOut);
+  await page.keyboard.down('Control'); await page.mouse.wheel(0, -400); await page.keyboard.up('Control'); await expect.poll(width).toBeLessThan(afterZoomOut);
   await settle(); expect(await scroll()).toEqual(before);
   await page.mouse.wheel(400, 0); await settle(); expect(await scroll()).toEqual(before);
   const control = page.getByRole('button', { name: 'Vergrößern', exact: true });
   await control.hover(); const controlsScroll = await scroll(), controlsWidth = await width();
-  await page.mouse.wheel(0, -400); await expect.poll(width).toBeLessThan(controlsWidth);
+  await page.keyboard.down('Control'); await page.mouse.wheel(0, -400); await page.keyboard.up('Control'); await expect.poll(width).toBeLessThan(controlsWidth);
   await settle(); expect(await scroll()).toEqual(controlsScroll);
   await page.getByRole('button', { name: 'Plan einpassen', exact: true }).click();
   for (let i = 0; i < 18; i++) await control.click();
   await svg.hover(); const minimumWidth = await width(), limitScroll = await scroll();
   expect(minimumWidth).toBeGreaterThanOrEqual(100); expect(minimumWidth * .88).toBeLessThan(100);
-  await page.mouse.wheel(0, -400); await settle(); expect(await width()).toBe(minimumWidth); expect(await scroll()).toEqual(limitScroll);
+  await page.keyboard.down('Control'); await page.mouse.wheel(0, -400); await page.keyboard.up('Control'); await settle(); expect(await width()).toBe(minimumWidth); expect(await scroll()).toEqual(limitScroll);
   const left=page.locator('.setup-panel'),right=page.locator('.results-panel');
   const panelScroll=(panel: typeof left)=>panel.evaluate(node=>node.scrollTop);
   const canvasBox=await svg.boundingBox(),canvasWidth=await width(),pageScroll=await scroll();

@@ -331,7 +331,7 @@ function App() {
         <label className="snap-rooms-control"><input type="checkbox" checked={snapRooms} onChange={e => setSnapRooms(e.target.checked)} />An anderen Raumkanten einrasten <small>beim Zeichnen, Eckpunkte ziehen und Raum verschieben</small></label>
         <div className="drawing-help">{tool === 'draw' ? <><ScanLine size={14} />Eckpunkte anklicken · ersten Punkt zum Schließen wählen · Shift: 45° · Esc: Abbrechen</> :
           tool === 'calibrate' ? <><Ruler size={14} />Zwei Punkte einer bekannten Strecke im Grundriss anklicken.</> :
-          tool === 'pan' ? <><Hand size={14} />Plan mit gedrückter Maustaste verschieben · Mausrad zum Zoomen.</> :
+          tool === 'pan' ? <><Hand size={14} />Plan mit gedrückter Maustaste verschieben · Mausrad: schieben · Strg + Mausrad: zoomen.</> :
           tool === 'move-room' ? <><Move size={14} />Raum anklicken und ziehen. Nahe Ecken und Wände rasten exakt zusammen.</> :
           <><MousePointer2 size={14} />Leertaste + Ziehen: Plan schieben · Wandmaß: Länge ändern · +: Punkt einfügen · Shift: gerade ziehen.</>}
           {tool === 'draw' && draft.length > 0 && <div className="drawing-actions"><button onClick={() => setDraft(draft.slice(0, -1))}>Punkt zurück</button><button disabled={draft.length < 3} onClick={() => addRoom(draft)}>Raum schließen</button></div>}</div>

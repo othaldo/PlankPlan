@@ -223,15 +223,19 @@ export function PlanCanvas({ floor, selectedId, layouts, tool, draft, setDraft, 
       // including over controls and at zoom limits, before the event bubbles.
       event.preventDefault(); event.stopPropagation();
       const matrix = svg.current?.getScreenCTM(); if (!matrix) return;
-      if (event.deltaX && Math.abs(event.deltaX) >= Math.abs(event.deltaY)) {
-        const pixels = event.deltaX * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? node.clientWidth : 1);
-        const scale = Math.hypot(matrix.a, matrix.b);
-        if (scale > 0) setView(v => ({ ...v, x: v.x + pixels / scale }));
+      if (event.ctrlKey || event.metaKey) {
+        if (!event.deltaY) return;
+        const point = new DOMPoint(event.clientX, event.clientY).matrixTransform(matrix.inverse());
+        zoom(event.deltaY > 0 ? 1.12 : .88, { x: point.x, y: point.y });
         return;
       }
-      if (!event.deltaY) return;
-      const point = new DOMPoint(event.clientX, event.clientY).matrixTransform(matrix.inverse());
-      zoom(event.deltaY > 0 ? 1.12 : .88, { x: point.x, y: point.y });
+      // Some browsers already turn Shift + wheel into a horizontal delta.
+      const dx = event.shiftKey ? event.deltaX || event.deltaY : event.deltaX;
+      const dy = event.shiftKey ? 0 : event.deltaY;
+      const unitX = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? node.clientWidth : 1;
+      const unitY = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? node.clientHeight : 1;
+      const scale = Math.hypot(matrix.a, matrix.b);
+      if (scale > 0) setView(v => ({ ...v, x: v.x + dx * unitX / scale, y: v.y + dy * unitY / scale }));
     };
     node.addEventListener('wheel', wheel, { passive: false });
     return () => node.removeEventListener('wheel', wheel);
