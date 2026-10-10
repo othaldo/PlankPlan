@@ -400,6 +400,11 @@ test('optimizes project-wide packs with shared offcuts and reproduces sources af
   await expect(page.getByTestId('cross-room-pieces')).toHaveText('0');
   await expect(page.getByTestId('project-packages')).toContainText('2 Pakete insgesamt');
   expect((await page.locator('svg path > title').allTextContents()).join('\n')).not.toContain('Kurzer Raum (Erdgeschoss)');
+  const roomOverview=page.getByTestId('room-package-overview');
+  await expect(roomOverview).toBeVisible();
+  await expect(roomOverview.locator('tbody tr').filter({hasText:'Obergeschoss · Langer Raum'})).toHaveText('Obergeschoss · Langer Raum21');
+  await expect(roomOverview.locator('tbody tr').filter({hasText:'Erdgeschoss · Kurzer Raum'})).toHaveText('Erdgeschoss · Kurzer Raum11');
+  await expect(page.getByText('1 Paket für diesen Raum',{exact:true})).toBeVisible();
   await page.getByRole('button',{name:'Pakete optimieren',exact:true}).click();
   await expect(page.locator('.notice')).toContainText('Beste gefundene Planung: 2 Pakete');
   await expect(page.getByTestId('cross-room-pieces')).toHaveText('0');
@@ -410,6 +415,7 @@ test('optimizes project-wide packs with shared offcuts and reproduces sources af
   await page.reload(); await expect(noExchange).toBeChecked();
   await expect(page.getByTestId('cross-room-pieces')).toHaveText('0');
   await noExchange.uncheck(); await page.getByRole('button',{name:'Pakete optimieren',exact:true}).click();
+  await expect(roomOverview).not.toBeVisible();
   await expect(page.getByTestId('cross-room-pieces')).toHaveText('1');
   await expect(page.getByTestId('project-packages')).toContainText('1 Paket insgesamt');
 });
